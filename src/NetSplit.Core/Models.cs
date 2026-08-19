@@ -230,6 +230,21 @@ public sealed record RuntimeStatus
     public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
+public sealed record ProxyDelayResult
+{
+    public string Name { get; init; } = string.Empty;
+    public int? DelayMilliseconds { get; init; }
+    public DateTimeOffset MeasuredAt { get; init; }
+    public string Error { get; init; } = string.Empty;
+}
+
+public sealed record ProxyDelayBatchResult
+{
+    public IReadOnlyList<ProxyDelayResult> Results { get; init; } = [];
+    public DateTimeOffset MeasuredAt { get; init; }
+    public bool FromCache { get; init; }
+}
+
 public sealed record ClientSettingsSnapshot
 {
     public bool Enabled { get; init; }

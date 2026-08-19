@@ -273,6 +273,10 @@ public sealed class PipeServerHostedService : BackgroundService
                     RequiredPayload<SelectProxyRequest>(request).Name,
                     cancellationToken).ConfigureAwait(false);
                 break;
+            case RpcCommands.MeasureProxyDelays:
+                return RpcPayload.From(
+                    await _coordinator.MeasureProxyDelaysAsync(cancellationToken)
+                        .ConfigureAwait(false));
             case RpcCommands.SetProxyExitMode:
                 await _coordinator.SetProxyExitModeAsync(
                     RequiredPayload<SetProxyExitModeRequest>(request),

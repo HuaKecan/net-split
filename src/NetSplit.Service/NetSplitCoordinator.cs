@@ -8,6 +8,8 @@ namespace NetSplit.Service;
 public sealed class NetSplitCoordinator : IAsyncDisposable
 {
     private static readonly TimeSpan TrafficHistorySampleInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ProxyDelayCacheDuration = TimeSpan.FromMinutes(5);
+    private const int ProxyDelayProbeConcurrency = 8;
 
     private readonly AppPaths _paths;
     private readonly SettingsStore _settingsStore;
@@ -19,6 +21,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     private readonly IMihomoControllerClient _controller;
     private readonly FileLogBuffer _logs;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly SemaphoreSlim _proxyDelayGate = new(1, 1);
     private readonly Dictionary<string, TrafficSample> _trafficSamples =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly TrafficHistoryBuffer _trafficHistory = new();
@@ -41,6 +44,8 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     private string _appliedDirectAdapterName = string.Empty;
     private string _appliedProxyAdapterName = string.Empty;
     private DateTimeOffset? _adapterReapplyDue;
+    private ProxyDelayCacheEntry? _proxyDelayCache;
+    private int _proxyDelayCacheGeneration;
 
     public NetSplitCoordinator(
         AppPaths paths,
@@ -996,6 +1001,106 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         }
     }
 
+    public async Task<ProxyDelayBatchResult> MeasureProxyDelaysAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureReady();
+        await _proxyDelayGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var status = _status;
+            if (!status.Enabled
+                || !_processManager.IsRunning
+                || !status.MihomoRunning
+                || !status.TunEnabled
+                || !status.DnsStatusKnown
+                || !status.DnsEnabled)
+            {
+                throw new InvalidOperationException("Mihomo TUN 与 DNS 就绪后才能测速。");
+            }
+
+            if (!status.ProxyAdapterAvailable)
+            {
+                throw new InvalidOperationException("网卡2当前不可用，无法测试代理节点。");
+            }
+
+            var nodeNames = status.AvailableProxies
+                .Where(IsMeasurableProxy)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var measuredAt = DateTimeOffset.UtcNow;
+            if (nodeNames.Length == 0)
+            {
+                return new ProxyDelayBatchResult
+                {
+                    MeasuredAt = measuredAt
+                };
+            }
+
+            var signature = string.Join(
+                "\u001F",
+                nodeNames.OrderBy(name => name, StringComparer.Ordinal));
+            var generation = Volatile.Read(ref _proxyDelayCacheGeneration);
+            var cached = _proxyDelayCache;
+            if (cached is not null
+                && cached.Generation == generation
+                && cached.Signature.Equals(signature, StringComparison.Ordinal)
+                && IsProxyDelayCacheFresh(cached.MeasuredAt, measuredAt)
+                && generation == Volatile.Read(ref _proxyDelayCacheGeneration))
+            {
+                return new ProxyDelayBatchResult
+                {
+                    Results = cached.Results,
+                    MeasuredAt = cached.MeasuredAt,
+                    FromCache = true
+                };
+            }
+
+            var settings = _activeSettings ?? _settings;
+            using var slots = new SemaphoreSlim(
+                ProxyDelayProbeConcurrency,
+                ProxyDelayProbeConcurrency);
+            var probes = await Task.WhenAll(
+                nodeNames.Select(name => MeasureProxyNodeAsync(
+                    settings,
+                    name,
+                    slots,
+                    cancellationToken))).ConfigureAwait(false);
+            measuredAt = DateTimeOffset.UtcNow;
+            var results = probes.Select(probe => new ProxyDelayResult
+            {
+                Name = probe.Name,
+                DelayMilliseconds = probe.Delay,
+                MeasuredAt = measuredAt,
+                Error = probe.Error
+            }).ToArray();
+
+            if (generation == Volatile.Read(ref _proxyDelayCacheGeneration))
+            {
+                _proxyDelayCache = new ProxyDelayCacheEntry(
+                    generation,
+                    signature,
+                    measuredAt,
+                    results);
+            }
+
+            var availableCount = results.Count(result => result.DelayMilliseconds.HasValue);
+            await _logs.WriteAsync(
+                "INFO",
+                $"节点批量测速完成：{availableCount}/{results.Length} 个节点可用。",
+                cancellationToken).ConfigureAwait(false);
+            return new ProxyDelayBatchResult
+            {
+                Results = results,
+                MeasuredAt = measuredAt
+            };
+        }
+        finally
+        {
+            _proxyDelayGate.Release();
+        }
+    }
+
     public async Task MaintainAsync(CancellationToken cancellationToken)
     {
         if (!_initialized)
@@ -1178,11 +1283,72 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         }
     }
 
+    private async Task<ProxyDelayProbeResult> MeasureProxyNodeAsync(
+        SplitRouteSettings settings,
+        string proxyName,
+        SemaphoreSlim slots,
+        CancellationToken cancellationToken)
+    {
+        await slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            try
+            {
+                var delay = await _controller.MeasureDelayAsync(
+                    settings,
+                    proxyName,
+                    "https://www.gstatic.com/generate_204",
+                    cancellationToken).ConfigureAwait(false);
+                return delay.HasValue
+                    ? new ProxyDelayProbeResult(proxyName, delay, string.Empty)
+                    : new ProxyDelayProbeResult(proxyName, null, "节点未返回可用延迟。");
+            }
+            catch (HttpRequestException)
+            {
+                return new ProxyDelayProbeResult(proxyName, null, "连接失败。");
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new ProxyDelayProbeResult(proxyName, null, "测速超时。");
+            }
+        }
+        finally
+        {
+            slots.Release();
+        }
+    }
+
+    private static bool IsMeasurableProxy(string name)
+    {
+        return !string.IsNullOrWhiteSpace(name)
+            && !name.Equals(
+                MihomoConfigGenerator.AutoProxyGroupName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.ProxyGroupName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.DirectProxyName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.ResidentialProxyName,
+                StringComparison.Ordinal);
+    }
+
+    internal static bool IsProxyDelayCacheFresh(
+        DateTimeOffset measuredAt,
+        DateTimeOffset currentTime)
+    {
+        var age = currentTime - measuredAt;
+        return age >= TimeSpan.Zero && age < ProxyDelayCacheDuration;
+    }
+
     private async Task ApplyCoreAsync(
         bool forceRefresh,
         CancellationToken cancellationToken,
         bool restartLastKnownGoodOnFailure = true)
     {
+        Interlocked.Increment(ref _proxyDelayCacheGeneration);
         EnsureCoreStartAllowed();
         _status = _status with
         {
@@ -2745,6 +2911,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         }
 
         _operationGate.Dispose();
+        _proxyDelayGate.Dispose();
     }
 
     private sealed record TrafficSample(
@@ -2753,6 +2920,17 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         DateTimeOffset Timestamp);
 
     private sealed record DelayProbeResult(int? Delay, string? Error);
+
+    private sealed record ProxyDelayProbeResult(
+        string Name,
+        int? Delay,
+        string Error);
+
+    private sealed record ProxyDelayCacheEntry(
+        int Generation,
+        string Signature,
+        DateTimeOffset MeasuredAt,
+        IReadOnlyList<ProxyDelayResult> Results);
 
     private sealed record LastKnownGoodManifest
     {

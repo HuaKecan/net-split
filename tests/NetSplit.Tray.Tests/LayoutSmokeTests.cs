@@ -236,34 +236,36 @@ public sealed class LayoutSmokeTests
     {
         var toolbar = Enumerate(page)
             .OfType<TableLayoutPanel>()
-            .Single(panel =>
-                panel.ColumnCount == 3
-                && panel.RowCount == 1
-                && Enumerate(panel).OfType<ThemedButton>().Count() == 4);
+            .Single(panel => panel.AccessibleName == "代理节点操作栏");
         toolbar.PerformLayout();
 
-        var columns = toolbar.Controls
-            .Cast<Control>()
-            .OrderBy(control => control.Left)
-            .ToArray();
-        Assert.Equal(3, columns.Length);
-        for (var index = 0; index < columns.Length; index++)
+        var sections = toolbar.Controls.Cast<Control>().ToArray();
+        Assert.Equal(4, sections.Length);
+        foreach (var section in sections)
         {
-            var control = columns[index];
             Assert.True(
-                control.Left >= 0 && control.Right <= toolbar.ClientSize.Width + 1,
-                $"{control.GetType().Name} overflows the proxy toolbar: "
-                + $"{control.Bounds} within {toolbar.ClientRectangle}.");
-            if (index > 0)
+                section.Left >= 0
+                && section.Top >= 0
+                && section.Right <= toolbar.ClientSize.Width + 1
+                && section.Bottom <= toolbar.ClientSize.Height + 1,
+                $"{section.GetType().Name} overflows the proxy toolbar: "
+                + $"{section.Bounds} within {toolbar.ClientRectangle}.");
+        }
+
+        for (var left = 0; left < sections.Length; left++)
+        {
+            for (var right = left + 1; right < sections.Length; right++)
             {
-                Assert.True(
-                    columns[index - 1].Right <= control.Left,
-                    $"Proxy toolbar columns overlap: "
-                    + $"{columns[index - 1].Bounds} and {control.Bounds}.");
+                Assert.False(
+                    sections[left].Bounds.IntersectsWith(sections[right].Bounds),
+                    $"Proxy toolbar sections overlap: "
+                    + $"{sections[left].Bounds} and {sections[right].Bounds}.");
             }
         }
 
-        foreach (var button in Enumerate(toolbar).OfType<ThemedButton>())
+        var buttons = Enumerate(toolbar).OfType<ThemedButton>().ToArray();
+        Assert.Equal(5, buttons.Length);
+        foreach (var button in buttons)
         {
             var textWidth = TextRenderer.MeasureText(
                 button.Text,
@@ -546,6 +548,7 @@ public sealed class LayoutSmokeTests
         };
         var pages = new PageBase[]
         {
+            new ProxiesPage(client),
             new ResidentialProxyPage(client),
             new SubscriptionsPage(client),
             new RulesPage(client),
@@ -569,6 +572,10 @@ public sealed class LayoutSmokeTests
             page.PerformLayout();
             AssertTextHeights(page);
             AssertRoundedManagementSurface(page);
+            if (page is ProxiesPage proxiesPage)
+            {
+                AssertProxyToolbarFits(proxiesPage);
+            }
         }
 
         host.Controls.Clear();

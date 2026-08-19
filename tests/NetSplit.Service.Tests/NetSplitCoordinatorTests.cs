@@ -47,6 +47,25 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ProxyDelayCacheExpiresAtFiveMinuteBoundary()
+    {
+        var measuredAt = DateTimeOffset.UtcNow;
+
+        Assert.True(
+            NetSplitCoordinator.IsProxyDelayCacheFresh(
+                measuredAt,
+                measuredAt.AddMinutes(4).AddSeconds(59)));
+        Assert.False(
+            NetSplitCoordinator.IsProxyDelayCacheFresh(
+                measuredAt,
+                measuredAt.AddMinutes(5)));
+        Assert.False(
+            NetSplitCoordinator.IsProxyDelayCacheFresh(
+                measuredAt,
+                measuredAt.AddSeconds(-1)));
+    }
+
+    [Fact]
     public async Task EnableGeneratesConfigStartsCoreAndReportsHealthy()
     {
         var direct = Adapter("direct", "主宽带", "192.168.6.2", "192.168.6.1");
@@ -550,6 +569,69 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
             coordinator.Status.ProxyRouteFailure);
         Assert.Empty(coordinator.Status.HealthyProxies);
         Assert.Contains("node", coordinator.Status.AvailableProxies);
+    }
+
+    [Fact]
+    public async Task MeasureProxyDelaysCachesResultsAndInvalidatesAfterCoreRebuild()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var controller = new FakeController
+        {
+            SelectedProxyHealthy = true,
+            AvailableProxyNames =
+            [
+                MihomoConfigGenerator.AutoProxyGroupName,
+                "slow-node",
+                "fast-node",
+                "offline-node"
+            ]
+        };
+        controller.DelayByProxyName["slow-node"] = 240;
+        controller.DelayByProxyName["fast-node"] = 35;
+        controller.DelayByProxyName["offline-node"] = null;
+        var paths = new AppPaths(_tempRoot);
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            new FakeProcessManager(),
+            controller,
+            logs);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var first = await coordinator.MeasureProxyDelaysAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+        var second = await coordinator.MeasureProxyDelaysAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Assert.False(first.FromCache);
+        Assert.True(second.FromCache);
+        Assert.Equal(first.MeasuredAt, second.MeasuredAt);
+        Assert.Equal(3, first.Results.Count);
+        Assert.Equal(
+            35,
+            first.Results.Single(result => result.Name == "fast-node")
+                .DelayMilliseconds);
+        Assert.Null(
+            first.Results.Single(result => result.Name == "offline-node")
+                .DelayMilliseconds);
+        Assert.Equal(3, controller.MeasuredProxyNames.Count);
+
+        await coordinator.RepairAsync(CancellationToken.None).ConfigureAwait(true);
+        var afterRebuild = await coordinator.MeasureProxyDelaysAsync(CancellationToken.None)
+            .ConfigureAwait(true);
+
+        Assert.False(afterRebuild.FromCache);
+        Assert.Equal(6, controller.MeasuredProxyNames.Count);
     }
 
     [Fact]
@@ -2063,6 +2145,67 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PipeDispatchesBatchProxyDelayMeasurement()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var controller = new FakeController
+        {
+            SelectedProxyHealthy = true,
+            AvailableProxyNames =
+            [
+                MihomoConfigGenerator.AutoProxyGroupName,
+                "fast-node",
+                "offline-node"
+            ]
+        };
+        controller.DelayByProxyName["fast-node"] = 28;
+        controller.DelayByProxyName["offline-node"] = null;
+        var paths = new AppPaths(_tempRoot);
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            new FakeProcessManager(),
+            controller,
+            logs);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var pipeName = $"net-split-test-{Guid.NewGuid():N}";
+        using var server = new PipeServerHostedService(coordinator, logs, paths, pipeName);
+        await server.StartAsync(CancellationToken.None).ConfigureAwait(true);
+        try
+        {
+            var result = await new NamedPipeRpcClient(pipeName)
+                .SendAsync<ProxyDelayBatchResult>(
+                    RpcCommands.MeasureProxyDelays,
+                    timeout: TimeSpan.FromSeconds(20))
+                .ConfigureAwait(true);
+
+            Assert.NotNull(result);
+            Assert.Equal(2, result!.Results.Count);
+            Assert.Equal(
+                28,
+                result.Results.Single(item => item.Name == "fast-node")
+                    .DelayMilliseconds);
+            Assert.Null(
+                result.Results.Single(item => item.Name == "offline-node")
+                    .DelayMilliseconds);
+        }
+        finally
+        {
+            await server.StopAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+    }
+
+    [Fact]
     public async Task DiagnosticsSnapshotContainsSafeSummaryWithoutSecrets()
     {
         var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
@@ -2450,6 +2593,10 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         public bool? SelectedProxyHealthy { get; set; }
         public bool? ResidentialProxyHealthy { get; set; }
         public List<string> MeasuredProxyNames { get; } = [];
+        public IReadOnlyList<string> AvailableProxyNames { get; set; } =
+            [MihomoConfigGenerator.AutoProxyGroupName, "node"];
+        public Dictionary<string, int?> DelayByProxyName { get; } =
+            new(StringComparer.Ordinal);
         public int SnapshotCalls { get; private set; }
 
         public Task<bool> WaitUntilReadyAsync(
@@ -2500,14 +2647,19 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
                 new MihomoApiSnapshot(
                     TunEnabled,
                     MihomoConfigGenerator.AutoProxyGroupName,
-                    [MihomoConfigGenerator.AutoProxyGroupName, "node"])
+                    AvailableProxyNames)
                 {
                     DnsEnabled = DnsEnabled,
                     SelectedProxyHealthy = selectedProxyHealthy,
                     EffectiveProxy = settings.ResidentialProxy.Enabled
                         ? MihomoConfigGenerator.ResidentialProxyName
                         : "node",
-                    HealthyProxies = SelectedProxyHealthy is true ? ["node"] : []
+                    HealthyProxies = SelectedProxyHealthy is true
+                        ? AvailableProxyNames.Where(name => !name.Equals(
+                                MihomoConfigGenerator.AutoProxyGroupName,
+                                StringComparison.Ordinal))
+                            .ToArray()
+                        : []
                 });
         }
 
@@ -2540,6 +2692,11 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
                 && FailResidentialDelay)
             {
                 throw new HttpRequestException("simulated residential delay failure");
+            }
+
+            if (DelayByProxyName.TryGetValue(proxyName, out var delay))
+            {
+                return Task.FromResult(delay);
             }
 
             return Task.FromResult<int?>(25);

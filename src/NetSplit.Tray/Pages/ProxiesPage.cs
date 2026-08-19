@@ -8,11 +8,20 @@ public sealed class ProxiesPage : PageBase
     private readonly Label _delayLabel = new();
     private readonly Label _currentLabel = new();
     private readonly Label _emptyLabel = new();
+    private readonly Label _testSummaryLabel = new();
     private readonly ThemedButton _airportExitButton = new();
     private readonly ThemedButton _residentialExitButton = new();
+    private readonly ThemedButton _testAllButton = new();
     private readonly ThemedButton _autoButton = new();
     private readonly ThemedButton _applyButton = new();
+    private readonly Dictionary<string, ProxyDelayResult> _delayResults =
+        new(StringComparer.Ordinal);
     private ProxyExitMode _exitMode = ProxyExitMode.Airport;
+    private DateTimeOffset? _delayMeasuredAt;
+    private bool _delayFromCache;
+    private bool _sortByDelay;
+    private bool _delaySortAscending = true;
+    private string _delayNodeSignature = string.Empty;
 
     public ProxiesPage(NamedPipeRpcClient client)
         : base(
@@ -35,7 +44,7 @@ public sealed class ProxiesPage : PageBase
             Margin = Padding.Empty
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 94));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.Controls.Add(BuildToolbar(), 0, 0);
         root.Controls.Add(BuildGrid(), 0, 1);
@@ -58,14 +67,16 @@ public sealed class ProxiesPage : PageBase
         var toolbar = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1,
+            ColumnCount = 2,
+            RowCount = 2,
             BackColor = theme.BackgroundSurface,
-            Margin = Padding.Empty
+            Margin = Padding.Empty,
+            AccessibleName = "代理节点操作栏"
         };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var state = new FlowLayoutPanel
         {
@@ -108,6 +119,7 @@ public sealed class ProxiesPage : PageBase
         state.Controls.Add(currentRow);
         toolbar.Controls.Add(state, 0, 0);
         toolbar.Controls.Add(BuildExitModeSelector(), 1, 0);
+        toolbar.Controls.Add(BuildDelayStatus(), 0, 1);
 
         var actions = new FlowLayoutPanel
         {
@@ -118,6 +130,14 @@ public sealed class ProxiesPage : PageBase
             BackColor = theme.BackgroundSurface,
             Margin = new Padding(UiMetrics.SpaceLg, 0, 0, 0)
         };
+        _testAllButton.Text = "测速全部";
+        _testAllButton.Kind = ButtonKind.Secondary;
+        _testAllButton.Glyph = UiGlyphs.Validate;
+        _testAllButton.Margin = new Padding(0, 0, UiMetrics.SpaceSm, 0);
+        _testAllButton.SizeToContent(104);
+        _testAllButton.Click += (_, _) => _ = MeasureAllAsync();
+        actions.Controls.Add(_testAllButton);
+
         _autoButton.Text = "自动出口";
         _autoButton.Kind = ButtonKind.Secondary;
         _autoButton.Glyph = UiGlyphs.Refresh;
@@ -134,10 +154,39 @@ public sealed class ProxiesPage : PageBase
         _applyButton.SizeToContent(104);
         _applyButton.Click += (_, _) => _ = ApplySelectionAsync();
         actions.Controls.Add(_applyButton);
-        toolbar.Controls.Add(actions, 2, 0);
+        toolbar.Controls.Add(actions, 1, 1);
         UpdateExitModeControls();
         card.Controls.Add(toolbar);
         return card;
+    }
+
+    private FlowLayoutPanel BuildDelayStatus()
+    {
+        var theme = ThemeManager.Current;
+        var status = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            BackColor = theme.BackgroundSurface,
+            Margin = Padding.Empty
+        };
+        status.Controls.Add(new Label
+        {
+            Text = "节点测速",
+            AutoSize = true,
+            Font = UiFonts.CaptionStrong,
+            ForeColor = theme.TextPrimary,
+            Margin = Padding.Empty
+        });
+        _testSummaryLabel.Text = "尚未测速";
+        _testSummaryLabel.AutoSize = true;
+        _testSummaryLabel.Font = UiFonts.Caption;
+        _testSummaryLabel.ForeColor = theme.TextMuted;
+        _testSummaryLabel.Margin = new Padding(UiMetrics.SpaceMd, 0, 0, 0);
+        status.Controls.Add(_testSummaryLabel);
+        return status;
     }
 
     private FlowLayoutPanel BuildExitModeSelector()
@@ -200,9 +249,13 @@ public sealed class ProxiesPage : PageBase
         _grid.AccessibleName = "代理节点列表";
         _grid.Columns.Add(UiGrid.TextColumn("DisplayName", "节点", fill: true));
         _grid.Columns.Add(UiGrid.TextColumn("Strategy", "选择方式", 110));
+        var delayColumn = UiGrid.TextColumn("Delay", "延迟", 94);
+        delayColumn.SortMode = DataGridViewColumnSortMode.Programmatic;
+        _grid.Columns.Add(delayColumn);
         _grid.Columns.Add(UiGrid.TextColumn("State", "状态", 90));
         _grid.CellDoubleClick += (_, _) => _ = ApplySelectionAsync();
         _grid.CellFormatting += OnCellFormatting;
+        _grid.ColumnHeaderMouseClick += OnColumnHeaderMouseClick;
 
         _emptyLabel.Text = "暂无可用节点，请先添加或更新订阅。";
         _emptyLabel.Font = UiFonts.Body;
@@ -226,8 +279,24 @@ public sealed class ProxiesPage : PageBase
         }
 
         var cellStyle = e.CellStyle;
-        if (cellStyle is not null
-            && _grid.Columns[e.ColumnIndex].Name == "State")
+        if (cellStyle is null)
+        {
+            return;
+        }
+
+        if (row.DelayMeasured && !row.DelayMilliseconds.HasValue)
+        {
+            cellStyle.ForeColor = ThemeManager.Current.TextMuted;
+        }
+
+        var columnName = _grid.Columns[e.ColumnIndex].Name;
+        if (columnName == "Delay"
+            && row.DelayMeasured
+            && !row.DelayMilliseconds.HasValue)
+        {
+            cellStyle.ForeColor = ThemeManager.Current.Danger;
+        }
+        else if (columnName == "State")
         {
             if (row.IsCurrent || row.IsHealthy)
             {
@@ -239,6 +308,27 @@ public sealed class ProxiesPage : PageBase
                 cellStyle.ForeColor = ThemeManager.Current.Danger;
             }
         }
+    }
+
+    private void OnColumnHeaderMouseClick(
+        object? sender,
+        DataGridViewCellMouseEventArgs e)
+    {
+        if (e.ColumnIndex < 0
+            || _grid.Columns[e.ColumnIndex].Name != "Delay"
+            || _delayMeasuredAt is null)
+        {
+            return;
+        }
+
+        _delaySortAscending = !_sortByDelay || !_delaySortAscending;
+        _sortByDelay = true;
+        var rows = _grid.Rows
+            .Cast<DataGridViewRow>()
+            .Select(row => row.DataBoundItem)
+            .OfType<ProxyRow>()
+            .ToArray();
+        BindRows(rows);
     }
 
     private async Task SetExitModeAsync(ProxyExitMode mode)
@@ -296,7 +386,55 @@ public sealed class ProxiesPage : PageBase
             return;
         }
 
+        if (row.HealthKnown && !row.IsHealthy)
+        {
+            ShowWarning("该节点当前不可用，请选择健康节点或重新测速。");
+            return;
+        }
+
         await SelectAsync(row.Name).ConfigureAwait(true);
+    }
+
+    private async Task MeasureAllAsync()
+    {
+        _testAllButton.Text = "测速中…";
+        _testAllButton.SizeToContent(104);
+        try
+        {
+            await RunActionAsync(async () =>
+            {
+                var batch = await Client.SendAsync<ProxyDelayBatchResult>(
+                    RpcCommands.MeasureProxyDelays,
+                    timeout: TimeSpan.FromMinutes(2)).ConfigureAwait(true)
+                    ?? throw new InvalidOperationException("服务未返回节点测速结果。");
+                _delayResults.Clear();
+                foreach (var result in batch.Results)
+                {
+                    _delayResults[result.Name] = result;
+                }
+
+                _delayMeasuredAt = batch.MeasuredAt;
+                _delayFromCache = batch.FromCache;
+                _sortByDelay = batch.Results.Count > 0;
+                _delaySortAscending = true;
+                _delayNodeSignature = CreateDelaySignature(
+                    batch.Results.Select(result => result.Name));
+                await RefreshAsync().ConfigureAwait(true);
+
+                var available = batch.Results.Count(result =>
+                    result.DelayMilliseconds.HasValue);
+                ShowInfo(batch.Results.Count == 0
+                    ? "当前代理组中没有可测速的真实节点。"
+                    : batch.FromCache
+                        ? $"已载入 5 分钟内的测速结果：{available}/{batch.Results.Count} 个节点可用。"
+                        : $"测速完成：{available}/{batch.Results.Count} 个节点可用。");
+            }).ConfigureAwait(true);
+        }
+        finally
+        {
+            _testAllButton.Text = "测速全部";
+            _testAllButton.SizeToContent(104);
+        }
     }
 
     public override async Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -342,7 +480,26 @@ public sealed class ProxiesPage : PageBase
                     : "机场代理组当前没有健康节点。国内直连继续工作，国外流量保持阻断。");
             }
 
-            var rows = (status.AvailableProxies ?? [])
+            var availableNames = status.AvailableProxies ?? [];
+            var delayNodeSignature = CreateDelaySignature(
+                availableNames.Where(IsMeasurableProxy));
+            if (_delayMeasuredAt is not null
+                && !_delayNodeSignature.Equals(
+                    delayNodeSignature,
+                    StringComparison.Ordinal))
+            {
+                ResetDelayResults();
+            }
+
+            var availableSet = availableNames.ToHashSet(StringComparer.Ordinal);
+            foreach (var staleName in _delayResults.Keys
+                         .Where(name => !availableSet.Contains(name))
+                         .ToArray())
+            {
+                _delayResults.Remove(staleName);
+            }
+
+            var rows = availableNames
                 .Select(name => new ProxyRow(
                     name,
                     DisplayName(name),
@@ -360,16 +517,18 @@ public sealed class ProxiesPage : PageBase
                         : status.ProxyRouteHealthKnown
                             ? IsHealthy(status, name) ? "可用" : "不可用"
                             : string.Empty,
+                    DelayText(name),
                     name.Equals(status.CurrentProxy, StringComparison.Ordinal),
                     status.ProxyRouteHealthKnown,
-                    IsHealthy(status, name)))
+                    IsHealthy(status, name),
+                    _delayResults.TryGetValue(name, out var delay)
+                        ? delay.DelayMilliseconds
+                        : null,
+                    _delayResults.ContainsKey(name)))
                 .ToList();
+            UpdateDelaySummary(rows);
             var preferred = _grid.CurrentRow is null ? status.CurrentProxy : null;
-            UiGrid.BindRowsPreservingSelection(
-                _grid,
-                rows,
-                row => row.Name,
-                preferred);
+            BindRows(rows, preferred);
             _grid.Visible = rows.Count > 0;
             _emptyLabel.Visible = rows.Count == 0;
             if (_emptyLabel.Visible)
@@ -381,6 +540,118 @@ public sealed class ProxiesPage : PageBase
         {
             ShowError($"无法连接服务：{exception.Message}");
         }
+    }
+
+    private string DelayText(string name)
+    {
+        if (!_delayResults.TryGetValue(name, out var result))
+        {
+            return "—";
+        }
+
+        return result.DelayMilliseconds is { } delay
+            ? $"{delay} ms"
+            : "不可用";
+    }
+
+    private void UpdateDelaySummary(IReadOnlyList<ProxyRow> rows)
+    {
+        var measurableCount = rows.Count(row =>
+            IsMeasurableProxy(row.Name));
+        if (_delayMeasuredAt is null)
+        {
+            _testSummaryLabel.Text = measurableCount == 0
+                ? "暂无真实节点"
+                : $"{measurableCount} 个节点 · 尚未测速";
+            return;
+        }
+
+        var availableCount = rows.Count(row => row.DelayMilliseconds.HasValue);
+        var source = _delayFromCache ? " · 缓存" : string.Empty;
+        _testSummaryLabel.Text =
+            $"{_delayMeasuredAt.Value.ToLocalTime():HH:mm:ss} · "
+            + $"{availableCount}/{measurableCount} 可用{source}";
+    }
+
+    private void BindRows(
+        IEnumerable<ProxyRow> source,
+        string? preferred = null)
+    {
+        var rows = OrderRows(source);
+        UiGrid.BindRowsPreservingSelection(
+            _grid,
+            rows,
+            row => row.Name,
+            preferred);
+        _grid.Columns["Delay"].HeaderCell.SortGlyphDirection = _sortByDelay
+            ? _delaySortAscending
+                ? SortOrder.Ascending
+                : SortOrder.Descending
+            : SortOrder.None;
+    }
+
+    private ProxyRow[] OrderRows(IEnumerable<ProxyRow> source)
+    {
+        var rows = source.ToArray();
+        if (!_sortByDelay)
+        {
+            return rows;
+        }
+
+        var automatic = rows.Where(row => row.Name.Equals(
+            MihomoConfigGenerator.AutoProxyGroupName,
+            StringComparison.Ordinal));
+        var measured = rows.Where(row =>
+            !row.Name.Equals(
+                MihomoConfigGenerator.AutoProxyGroupName,
+                StringComparison.Ordinal)
+            && row.DelayMilliseconds.HasValue);
+        measured = _delaySortAscending
+            ? measured.OrderBy(row => row.DelayMilliseconds)
+            : measured.OrderByDescending(row => row.DelayMilliseconds);
+        var remaining = rows.Where(row =>
+                !row.Name.Equals(
+                    MihomoConfigGenerator.AutoProxyGroupName,
+                    StringComparison.Ordinal)
+                && !row.DelayMilliseconds.HasValue)
+            .OrderBy(row => row.DelayMeasured ? 1 : 0)
+            .ThenBy(row => row.DisplayName, StringComparer.CurrentCultureIgnoreCase);
+        return automatic.Concat(measured).Concat(remaining).ToArray();
+    }
+
+    private static string CreateDelaySignature(IEnumerable<string> names)
+    {
+        return string.Join(
+            "\u001F",
+            names.Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.Ordinal));
+    }
+
+    private static bool IsMeasurableProxy(string name)
+    {
+        return !string.IsNullOrWhiteSpace(name)
+            && !name.Equals(
+                MihomoConfigGenerator.AutoProxyGroupName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.ProxyGroupName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.DirectProxyName,
+                StringComparison.Ordinal)
+            && !name.Equals(
+                MihomoConfigGenerator.ResidentialProxyName,
+                StringComparison.Ordinal);
+    }
+
+    private void ResetDelayResults()
+    {
+        _delayResults.Clear();
+        _delayMeasuredAt = null;
+        _delayFromCache = false;
+        _sortByDelay = false;
+        _delaySortAscending = true;
+        _delayNodeSignature = string.Empty;
     }
 
     internal static string ResolveCurrentRouteText(
@@ -494,7 +765,10 @@ public sealed class ProxiesPage : PageBase
         string DisplayName,
         string Strategy,
         string State,
+        string Delay,
         bool IsCurrent,
         bool HealthKnown,
-        bool IsHealthy);
+        bool IsHealthy,
+        int? DelayMilliseconds,
+        bool DelayMeasured);
 }

@@ -22,6 +22,7 @@ public static class RpcCommands
     public const string Rollback = "rollback";
     public const string RefreshSubscriptions = "refresh-subscriptions";
     public const string SelectProxy = "select-proxy";
+    public const string MeasureProxyDelays = "measure-proxy-delays";
     public const string SetProxyExitMode = "set-proxy-exit-mode";
     public const string GetTrafficHistory = "get-traffic-history";
 }
