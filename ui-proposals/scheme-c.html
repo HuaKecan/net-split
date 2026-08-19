@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 C · Minimal 极简</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #f2f5f8; color: #172434; font-family: 'Segoe UI Variable','Segoe UI',sans-serif; font-size: 13px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Chrome bar */
+.chrome {
+  height: 46px; background: #fff; border-bottom: 1px solid #d4dee8;
+  display: flex; align-items: center; padding: 0 18px; gap: 0; flex-shrink: 0;
+}
+.app-title { font-size: 13px; font-weight: 700; color: #172434; margin-right: 20px; letter-spacing: -.01em; }
+.app-title span { color: #5b8def; }
+
+/* Icon tab nav */
+.tab-nav { display: flex; gap: 2px; flex: 1; }
+.tab { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 4px 12px; border-radius: 8px; cursor: pointer; color: #768899;
+  min-width: 56px; gap: 2px; }
+.tab:hover { background: #eaf0f6; color: #2d4a6e; }
+.tab.active { background: #dfeefa; color: #075398; }
+.tab-icon { font-size: 15px; }
+.tab-label { font-size: 9.5px; font-weight: 600; letter-spacing: .02em; }
+
+.chrome-right { display: flex; align-items: center; gap: 10px; }
+.status-badge {
+  display: flex; align-items: center; gap: 5px; padding: 4px 10px;
+  background: #e8f9f3; border: 1px solid #b5eed9; border-radius: 99px;
+  font-size: 11px; font-weight: 600; color: #127c62;
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #127c62; }
+.toggle-group { display: flex; align-items: center; gap: 6px; }
+.toggle-text { font-size: 11.5px; color: #526478; }
+.track { width: 34px; height: 18px; background: #0b6bd3; border-radius: 99px; position: relative; cursor: pointer; }
+.thumb { width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; top: 3px; right: 3px; }
+.wbtns { display: flex; gap: 0; margin-left: 6px; }
+.wb { width: 34px; height: 28px; background: transparent; border: none; color: #889aad; cursor: pointer;
+  border-radius: 4px; font-size: 12px; }
+.wb:hover { background: #eaf0f6; }
+.wb.cl:hover { background: #c44a4a; color: #fff; }
+
+/* Main content */
+.main { flex: 1; overflow-y: auto; padding: 28px 48px; display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 0 auto; width: 100%; }
+
+/* Hero status */
+.hero {
+  background: #fff; border: 1px solid #d4dee8; border-radius: 14px;
+  padding: 24px 28px; display: flex; align-items: center; gap: 24px;
+}
+.hero-orb {
+  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #e8f9f3 0%, #b5eed9 100%);
+  border: 2px solid #3ad39d; display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.hero-body { flex: 1; }
+.hero-status { font-size: 18px; font-weight: 800; color: #172434; margin-bottom: 4px; }
+.hero-detail { font-size: 12.5px; color: #526478; line-height: 1.5; }
+.hero-next { margin-top: 8px; font-size: 12px; color: #127c62; font-weight: 500; }
+.hero-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.btn-p { padding: 8px 18px; background: #0b6bd3; color: #fff; border: none; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.btn-s { padding: 8px 18px; background: transparent; border: 1px solid #d4dee8; color: #526478; border-radius: 8px; font-size: 12.5px; cursor: pointer; }
+.btn-s:hover { border-color: #a9b9c9; }
+
+/* Two-col metrics */
+.metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.metric { background: #fff; border: 1px solid #d4dee8; border-radius: 12px; padding: 18px 20px; }
+.metric-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.metric-title { font-size: 11px; font-weight: 700; color: #526478; text-transform: uppercase; letter-spacing: .06em; }
+.metric-status { padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 600; }
+.ms-ok { background: #e8f9f3; color: #127c62; }
+.ms-info { background: #dfeefa; color: #075398; }
+.metric-value { font-size: 28px; font-weight: 800; color: #172434; line-height: 1; }
+.metric-value.green { color: #127c62; }
+.metric-value.blue { color: #0b6bd3; }
+.metric-sub { font-size: 11.5px; color: #768899; margin-top: 5px; }
+.metric-bar { height: 3px; border-radius: 99px; background: #d4dee8; margin-top: 12px; overflow: hidden; }
+.metric-bar-fill { height: 100%; border-radius: 99px; }
+
+/* Adapters minimal */
+.adapters { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.adapter { background: #fff; border: 1px solid #d4dee8; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 14px; }
+.adapter-pill { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.adapter-pill.direct { background: #3ad39d; }
+.adapter-pill.proxy { background: #0b6bd3; }
+.adapter-body { flex: 1; }
+.adapter-name { font-size: 13px; font-weight: 700; color: #172434; }
+.adapter-sub { font-size: 11px; color: #768899; margin-top: 2px; }
+.adapter-speeds { text-align: right; }
+.adapter-down { font-size: 13px; font-weight: 700; }
+.adapter-up { font-size: 10.5px; color: #768899; }
+
+/* Node row */
+.node-row { background: #fff; border: 1px solid #d4dee8; border-radius: 12px; padding: 16px 22px; display: flex; align-items: center; gap: 16px; }
+.node-flag { font-size: 22px; }
+.node-body { flex: 1; }
+.node-name { font-size: 14px; font-weight: 700; color: #172434; }
+.node-type { font-size: 11px; color: #768899; }
+.node-lat { font-size: 20px; font-weight: 800; color: #127c62; font-family: monospace; }
+.node-ms { font-size: 11px; color: #768899; }
+.btn-switch { padding: 6px 14px; border: 1px solid #d4dee8; background: transparent; color: #526478; border-radius: 8px; font-size: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- Chrome -->
+<div class="chrome">
+  <div class="app-title">net<span>-split</span></div>
+  <nav class="tab-nav">
+    <div class="tab active">
+      <span class="tab-icon">⊞</span>
+      <span class="tab-label">概览</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">◈</span>
+      <span class="tab-label">代理节点</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">⌂</span>
+      <span class="tab-label">住宅代理</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">☁</span>
+      <span class="tab-label">订阅</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">⚡</span>
+      <span class="tab-label">规则</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">≡</span>
+      <span class="tab-label">日志</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">⊕</span>
+      <span class="tab-label">诊断</span>
+    </div>
+    <div class="tab">
+      <span class="tab-icon">⚙</span>
+      <span class="tab-label">设置</span>
+    </div>
+  </nav>
+  <div class="chrome-right">
+    <div class="status-badge"><span class="status-dot"></span>分流正常</div>
+    <div class="toggle-group">
+      <span class="toggle-text">分流已开启</span>
+      <div class="track"><div class="thumb"></div></div>
+    </div>
+    <div class="wbtns">
+      <button class="wb">─</button>
+      <button class="wb">⬜</button>
+      <button class="wb cl">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- Page content -->
+<div class="main">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-orb">✓</div>
+    <div class="hero-body">
+      <div class="hero-status">透明分流运行正常</div>
+      <div class="hero-detail">IPv4 流量已接管 · 当前节点 HK-Premium-01 · DNS Fake-IP 已启用</div>
+      <div class="hero-next">下一步：无需操作；国内直连与国外代理正在按规则分流。</div>
+    </div>
+    <div class="hero-actions">
+      <button class="btn-p">⊕ 校验配置</button>
+      <button class="btn-s">↺ 刷新状态</button>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics-grid">
+    <div class="metric">
+      <div class="metric-top">
+        <span class="metric-title">直连出口</span>
+        <span class="metric-status ms-ok">● 正常</span>
+      </div>
+      <div class="metric-value green">12.4<span style="font-size:14px;font-weight:400;color:#768899"> MB/s</span></div>
+      <div class="metric-sub">网卡1 · 中国移动宽带</div>
+      <div class="metric-bar"><div class="metric-bar-fill" style="width:62%;background:#3ad39d"></div></div>
+    </div>
+    <div class="metric">
+      <div class="metric-top">
+        <span class="metric-title">代理出口</span>
+        <span class="metric-status ms-ok">● 正常</span>
+      </div>
+      <div class="metric-value blue">3.8<span style="font-size:14px;font-weight:400;color:#768899"> MB/s</span></div>
+      <div class="metric-sub">网卡2 · F50 无限流量卡</div>
+      <div class="metric-bar"><div class="metric-bar-fill" style="width:38%;background:#0b6bd3"></div></div>
+    </div>
+    <div class="metric">
+      <div class="metric-top">
+        <span class="metric-title">当前节点</span>
+        <span class="metric-status ms-info">42 ms</span>
+      </div>
+      <div class="metric-value" style="color:#172434">HK-01</div>
+      <div class="metric-sub">HK-Premium-01 · 自动选择</div>
+      <div class="metric-bar"><div class="metric-bar-fill" style="width:35%;background:#0b6bd3"></div></div>
+    </div>
+    <div class="metric">
+      <div class="metric-top">
+        <span class="metric-title">代理池</span>
+        <span class="metric-status ms-ok">8/12</span>
+      </div>
+      <div class="metric-value">8<span style="font-size:14px;font-weight:400;color:#768899">/12 个</span></div>
+      <div class="metric-sub">URL-test 自动选择</div>
+      <div class="metric-bar"><div class="metric-bar-fill" style="width:67%;background:#526478"></div></div>
+    </div>
+  </div>
+
+  <!-- Adapters -->
+  <div class="adapters">
+    <div class="adapter">
+      <div class="adapter-pill direct"></div>
+      <div class="adapter-body">
+        <div class="adapter-name">网卡1 · 国内直连</div>
+        <div class="adapter-sub">中国移动宽带 · 192.168.1.2</div>
+      </div>
+      <div class="adapter-speeds">
+        <div class="adapter-down" style="color:#127c62">↓ 10.2 MB/s</div>
+        <div class="adapter-up">↑ 2.2 MB/s</div>
+      </div>
+    </div>
+    <div class="adapter">
+      <div class="adapter-pill proxy"></div>
+      <div class="adapter-body">
+        <div class="adapter-name">网卡2 · 代理出口</div>
+        <div class="adapter-sub">F50 无限流量卡 · 10.0.0.1</div>
+      </div>
+      <div class="adapter-speeds">
+        <div class="adapter-down" style="color:#0b6bd3">↓ 2.8 MB/s</div>
+        <div class="adapter-up">↑ 1.0 MB/s</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Node -->
+  <div class="node-row">
+    <div class="node-flag">🇭🇰</div>
+    <div class="node-body">
+      <div class="node-name">HK-Premium-01</div>
+      <div class="node-type">自动选择 · VMess · TLS</div>
+    </div>
+    <div style="text-align:right">
+      <div class="node-lat">42</div>
+      <div class="node-ms">ms · 响应正常</div>
+    </div>
+    <button class="btn-switch">切换节点</button>
+  </div>
+
+</div>
+</body>
+</html>

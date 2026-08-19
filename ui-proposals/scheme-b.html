@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 B · Command 指挥台</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #080b10; color: #e8edf2; font-family: 'Segoe UI Variable','Segoe UI',sans-serif; font-size: 13px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Titlebar */
+.titlebar {
+  height: 42px; background: #0c0f14; border-bottom: 1px solid #1e2530;
+  display: flex; align-items: center; padding: 0 0 0 16px; -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+.app-logo { display: flex; align-items: center; gap: 8px; margin-right: 20px; }
+.logo-mark { width: 22px; height: 22px; background: #5b8def; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; font-size: 11px; }
+.logo-name { font-weight: 700; font-size: 12.5px; color: #c8d4e0; }
+.topnav { display: flex; gap: 2px; flex: 1; }
+.tn-item { padding: 6px 14px; border-radius: 6px; font-size: 12px; color: #7f8b99; cursor: pointer; }
+.tn-item:hover { background: #161b22; color: #c8d4e0; }
+.tn-item.active { background: #1a2133; color: #8eb4ff; font-weight: 600; }
+.titlebar-right { display: flex; align-items: center; gap: 10px; padding: 0 8px 0 0; -webkit-app-region: no-drag; }
+.status-pill {
+  display: flex; align-items: center; gap: 6px; padding: 4px 12px;
+  background: rgba(58,211,157,.1); border: 1px solid rgba(58,211,157,.2);
+  border-radius: 99px; font-size: 11px; font-weight: 600; color: #3ad39d;
+}
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #3ad39d;
+  animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+.master-switch { display: flex; align-items: center; gap: 6px; }
+.ms-label { font-size: 11.5px; color: #8eb4ff; font-weight: 600; }
+.track { width: 34px; height: 18px; background: #5b8def; border-radius: 99px; position: relative; cursor: pointer; }
+.thumb { width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; top: 3px; right: 3px; }
+.wb-row { display: flex; }
+.wb { width: 36px; height: 28px; background: transparent; border: none; color: #5a6470; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; border-radius: 4px; }
+.wb:hover { background: #1e2530; color: #c8d4e0; }
+.wb.c:hover { background: #c44a4a; color: #fff; }
+
+/* Status banner */
+.status-banner {
+  background: linear-gradient(90deg, rgba(91,141,239,.06) 0%, rgba(91,141,239,0) 60%);
+  border-bottom: 1px solid #1e2530;
+  padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+}
+.banner-icon { font-size: 22px; }
+.banner-main { flex: 1; }
+.banner-title { font-size: 14px; font-weight: 700; color: #f2f5f8; }
+.banner-sub { font-size: 11.5px; color: #7f8b99; margin-top: 2px; }
+.banner-time { font-size: 11px; color: #4a5563; }
+.banner-actions { display: flex; gap: 6px; }
+.btn { padding: 6px 14px; border-radius: 7px; font-size: 12px; cursor: pointer; border: none; }
+.btn-primary { background: #5b8def; color: #fff; font-weight: 600; }
+.btn-ghost { background: transparent; border: 1px solid #2d343e; color: #7f8b99; }
+.btn-ghost:hover { border-color: #46505d; color: #c8d4e0; }
+
+/* Content area */
+.content { flex: 1; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+/* Big numbers row */
+.big-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stat-box {
+  background: #0e1218; border: 1px solid #1e2530; border-radius: 10px;
+  padding: 16px 18px; position: relative; overflow: hidden;
+}
+.stat-box::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  border-radius: 0 0 10px 10px;
+}
+.stat-box.d::after { background: linear-gradient(90deg, #3ad39d, transparent); }
+.stat-box.p::after { background: linear-gradient(90deg, #5b8def, transparent); }
+.stat-box.n::after { background: linear-gradient(90deg, #f4ac45, transparent); }
+.stat-box.l::after { background: linear-gradient(90deg, #8eb4ff, transparent); }
+.stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #4a5563; margin-bottom: 8px; font-weight: 600; }
+.stat-num { font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+.stat-num.d { color: #3ad39d; }
+.stat-num.p { color: #5b8def; }
+.stat-num.n { color: #f4ac45; }
+.stat-num.l { color: #8eb4ff; }
+.stat-unit { font-size: 14px; font-weight: 400; }
+.stat-detail { font-size: 11px; color: #4a5563; }
+
+/* Grid layout */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+.panel { background: #0e1218; border: 1px solid #1e2530; border-radius: 10px; padding: 16px 18px; }
+.panel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.panel-title { font-size: 13px; font-weight: 700; color: #c8d4e0; }
+.panel-sub { font-size: 11px; color: #4a5563; margin-top: 2px; }
+.pill { padding: 2px 8px; border-radius: 99px; font-size: 10.5px; font-weight: 600; }
+.pill-ok { background: rgba(58,211,157,.12); color: #3ad39d; }
+.pill-warn { background: rgba(244,172,69,.12); color: #f4ac45; }
+
+/* Network interfaces table */
+.iface-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #141820; }
+.iface-row:last-child { border-bottom: none; }
+.iface-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.iface-dot.ok { background: #3ad39d; }
+.iface-dot.proxy { background: #5b8def; }
+.iface-name { font-size: 12.5px; font-weight: 600; color: #c8d4e0; flex: 1; }
+.iface-sub { font-size: 11px; color: #4a5563; }
+.iface-speed { text-align: right; }
+.iface-down { font-size: 12.5px; font-weight: 700; color: #3ad39d; }
+.iface-up { font-size: 11px; color: #4a5563; }
+
+/* Route path visual */
+.route-visual { display: flex; flex-direction: column; gap: 8px; }
+.route-line { display: flex; align-items: center; gap: 8px; }
+.route-chip { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.rc-src { background: #141820; color: #7f8b99; }
+.rc-direct { background: rgba(58,211,157,.12); color: #3ad39d; border: 1px solid rgba(58,211,157,.2); }
+.rc-proxy { background: rgba(91,141,239,.12); color: #8eb4ff; border: 1px solid rgba(91,141,239,.2); }
+.rc-dest { background: #141820; color: #7f8b99; }
+.route-arrow { color: #2d343e; font-size: 12px; }
+.route-label { font-size: 10px; color: #4a5563; margin-left: 4px; }
+
+/* Node info */
+.node-info { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.node-flag { font-size: 24px; }
+.node-main { flex: 1; }
+.node-name { font-size: 14px; font-weight: 700; color: #f2f5f8; }
+.node-type { font-size: 11px; color: #4a5563; }
+.node-latency { font-size: 22px; font-weight: 800; color: #3ad39d; font-family: monospace; }
+.node-ms { font-size: 12px; color: #4a5563; }
+</style>
+</head>
+<body>
+
+<!-- Titlebar -->
+<div class="titlebar">
+  <div class="app-logo">
+    <div class="logo-mark">N</div>
+    <span class="logo-name">net-split</span>
+  </div>
+  <nav class="topnav">
+    <div class="tn-item active">概览</div>
+    <div class="tn-item">代理节点</div>
+    <div class="tn-item">住宅代理</div>
+    <div class="tn-item">订阅</div>
+    <div class="tn-item">规则</div>
+    <div class="tn-item">运行日志</div>
+    <div class="tn-item">诊断</div>
+    <div class="tn-item">设置</div>
+  </nav>
+  <div class="titlebar-right">
+    <div class="status-pill"><span class="status-dot"></span>分流正常</div>
+    <div class="master-switch">
+      <span class="ms-label">分流已开启</span>
+      <div class="track"><div class="thumb"></div></div>
+    </div>
+    <div class="wb-row">
+      <button class="wb">─</button>
+      <button class="wb">⬜</button>
+      <button class="wb c">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- Status banner -->
+<div class="status-banner">
+  <div class="banner-icon">🛡️</div>
+  <div class="banner-main">
+    <div class="banner-title">透明分流已接管 IPv4 流量 · HK-Premium-01</div>
+    <div class="banner-sub">下一步：无需操作；国内直连与国外代理正在按规则分流。</div>
+  </div>
+  <div class="banner-time">更新于 14:32:08</div>
+  <div class="banner-actions">
+    <button class="btn btn-primary">⊕ 校验配置</button>
+    <button class="btn btn-ghost">↺ 刷新</button>
+    <button class="btn btn-ghost">⚑ 修复</button>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <!-- Big stats -->
+  <div class="big-stats">
+    <div class="stat-box d">
+      <div class="stat-label">直连出口</div>
+      <div class="stat-num d">12.4 <span class="stat-unit">MB/s</span></div>
+      <div class="stat-detail">网卡1 · 中国移动宽带</div>
+    </div>
+    <div class="stat-box p">
+      <div class="stat-label">代理出口</div>
+      <div class="stat-num p">3.8 <span class="stat-unit">MB/s</span></div>
+      <div class="stat-detail">网卡2 · F50 无限流量卡</div>
+    </div>
+    <div class="stat-box n">
+      <div class="stat-label">节点延迟</div>
+      <div class="stat-num n">42 <span class="stat-unit">ms</span></div>
+      <div class="stat-detail">HK-Premium-01 · 自动选择</div>
+    </div>
+    <div class="stat-box l">
+      <div class="stat-label">代理池健康</div>
+      <div class="stat-num l">8<span class="stat-unit">/12</span></div>
+      <div class="stat-detail">URL-test 自动选择</div>
+    </div>
+  </div>
+
+  <!-- Middle section -->
+  <div class="grid-3">
+    <!-- Route paths -->
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">分流路径</div><div class="panel-sub">实时路由分配</div></div>
+        <span class="pill pill-ok">正常</span>
+      </div>
+      <div class="route-visual">
+        <div class="route-line">
+          <span class="route-chip rc-src">本机流量</span>
+          <span class="route-arrow">→</span>
+          <span class="route-chip rc-direct">网卡1 直连</span>
+          <span class="route-arrow">→</span>
+          <span class="route-chip rc-dest">国内 IP</span>
+          <span class="route-label">↓10.2 ↑2.2 MB/s</span>
+        </div>
+        <div class="route-line">
+          <span class="route-chip rc-src">本机流量</span>
+          <span class="route-arrow">→</span>
+          <span class="route-chip rc-proxy">Mihomo TUN</span>
+          <span class="route-arrow">→</span>
+          <span class="route-chip rc-proxy">网卡2 · HK-01</span>
+          <span class="route-arrow">→</span>
+          <span class="route-chip rc-dest">国际 IP</span>
+        </div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #141820;">
+          <div class="panel-sub" style="margin-bottom:6px;">接口健康</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <span class="pill pill-ok">● TUN + DNS 已接管</span>
+            <span class="pill pill-ok">● 网卡1 可用</span>
+            <span class="pill pill-ok">● 网卡2 可用</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current node -->
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">当前节点</div><div class="panel-sub">代理链路</div></div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px">切换</button>
+      </div>
+      <div class="node-info">
+        <div class="node-flag">🇭🇰</div>
+        <div class="node-main">
+          <div class="node-name">HK-Premium-01</div>
+          <div class="node-type">自动选择 · VMess · TLS</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-top:4px;">
+        <span class="node-latency">42</span>
+        <span class="node-ms">ms · 响应正常</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interfaces -->
+  <div class="panel">
+    <div class="panel-header">
+      <div><div class="panel-title">物理出口</div><div class="panel-sub">网卡实时状态</div></div>
+    </div>
+    <div class="iface-row">
+      <div class="iface-dot ok"></div>
+      <div style="flex:1">
+        <div class="iface-name">网卡1 · 国内直连</div>
+        <div class="iface-sub">中国移动宽带 · 192.168.1.2 · 1000 Mbps · 角色：直连出口</div>
+      </div>
+      <div class="iface-speed">
+        <div class="iface-down">↓ 10.2 MB/s</div>
+        <div class="iface-up">↑ 2.2 MB/s</div>
+      </div>
+    </div>
+    <div class="iface-row">
+      <div class="iface-dot proxy"></div>
+      <div style="flex:1">
+        <div class="iface-name">网卡2 · 代理出口</div>
+        <div class="iface-sub">F50 无限流量卡 · 10.0.0.1 · 300 Mbps · 角色：代理出口</div>
+      </div>
+      <div class="iface-speed">
+        <div class="iface-down" style="color:#5b8def">↓ 2.8 MB/s</div>
+        <div class="iface-up">↑ 1.0 MB/s</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

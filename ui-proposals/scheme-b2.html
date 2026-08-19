@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 B2 · Glassmorphism Command</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #030712;
+  --glass: rgba(255,255,255,0.04);
+  --glass-2: rgba(255,255,255,0.07);
+  --border: rgba(255,255,255,0.08);
+  --border-hi: rgba(255,255,255,0.15);
+  --text: #f1f5f9;
+  --text-2: #94a3b8;
+  --text-3: #334155;
+  --accent: #3b82f6;
+  --accent-g: #22c55e;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --purple: #a78bfa;
+  --r: 12px;
+  --r-sm: 7px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Fira Sans', sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+/* Ambient background blobs */
+body::before {
+  content: '';
+  position: fixed; top: -120px; left: -80px;
+  width: 480px; height: 480px;
+  background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed; bottom: -100px; right: -60px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(34,197,94,0.08) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ── TOP NAV BAR ── */
+.topnav {
+  height: 48px; flex-shrink: 0; position: relative; z-index: 20;
+  background: rgba(3,7,18,0.8);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 16px;
+}
+.logo-mark {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fira Code', monospace; font-weight: 700; font-size: 11px; color: #fff;
+  box-shadow: 0 0 16px rgba(59,130,246,0.4);
+}
+.logo-text { font-family: 'Fira Code', monospace; font-size: 13px; font-weight: 600; color: var(--text); }
+.nav-divider { width: 1px; height: 20px; background: var(--border); }
+.tab-strip { display: flex; gap: 1px; flex: 1; }
+.tab {
+  padding: 6px 14px; border-radius: 7px;
+  font-size: 12px; color: var(--text-2); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.tab:hover { background: var(--glass); color: var(--text); }
+.tab.active {
+  background: rgba(59,130,246,0.12);
+  color: #93c5fd; font-weight: 600;
+  border: 1px solid rgba(59,130,246,0.2);
+}
+.topnav-right { display: flex; align-items: center; gap: 10px; }
+.status-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 99px;
+  background: rgba(34,197,94,0.08);
+  border: 1px solid rgba(34,197,94,0.2);
+  font-size: 11px; font-weight: 600; color: var(--accent-g);
+  font-family: 'Fira Code', monospace;
+}
+.sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-g); box-shadow: 0 0 7px var(--accent-g); animation: p 2.2s ease-in-out infinite; }
+@keyframes p { 0%,100%{opacity:1}50%{opacity:.3} }
+.toggle-row { display: flex; align-items: center; gap: 6px; }
+.tl { font-size: 11px; color: #93c5fd; font-family: 'Fira Code', monospace; }
+.track { width: 34px; height: 18px; background: linear-gradient(90deg, #3b82f6, #1d4ed8); border-radius: 99px; position: relative; cursor: pointer; box-shadow: 0 0 8px rgba(59,130,246,0.35); }
+.thumb { width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; top: 3px; right: 3px; }
+.wbs { display: flex; }
+.wb { width: 32px; height: 26px; background: transparent; border: none; color: var(--text-3); cursor: pointer; border-radius: 5px; font-size: 11px; }
+.wb:hover { background: var(--glass); color: var(--text-2); }
+.wb.cl:hover { background: var(--danger); color: #fff; }
+
+/* ── CONTENT ── */
+.content { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 1; }
+
+/* Glass card */
+.gc {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.gc:hover { border-color: var(--border-hi); }
+
+/* Hero banner */
+.hero-banner {
+  padding: 20px 24px;
+  background: linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(34,197,94,0.05) 100%);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: var(--r);
+  position: relative; overflow: hidden;
+}
+.hero-banner::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(59,130,246,0.6), rgba(34,197,94,0.4), transparent);
+}
+.hero-top { display: flex; align-items: flex-start; gap: 16px; }
+.hero-icon {
+  width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(59,130,246,0.08));
+  border: 1px solid rgba(59,130,246,0.3);
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+  box-shadow: 0 0 20px rgba(59,130,246,0.15);
+}
+.hero-body { flex: 1; }
+.hero-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); font-size: 10.5px; font-weight: 700; color: var(--accent-g); font-family: 'Fira Code', monospace; margin-bottom: 7px; }
+.hero-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.hero-sub { font-size: 12px; color: var(--text-2); }
+.hero-next { font-size: 11.5px; color: #86efac; font-style: italic; margin-top: 6px; }
+.hero-actions { display: flex; gap: 7px; margin-top: 12px; }
+.btn { padding: 6px 14px; border-radius: var(--r-sm); font-size: 12px; cursor: pointer; border: none; font-family: 'Fira Sans', sans-serif; }
+.btn-p { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; font-weight: 700; box-shadow: 0 0 12px rgba(59,130,246,0.3); }
+.btn-s { background: var(--glass-2); border: 1px solid var(--border-hi); color: var(--text-2); }
+.btn-l { background: transparent; border: none; color: var(--text-3); font-size: 11.5px; }
+
+/* Stats row */
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+.stat-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  position: relative; overflow: hidden;
+}
+.stat-card::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 1.5px;
+}
+.sc-green::after { background: linear-gradient(90deg, transparent, var(--accent-g), transparent); box-shadow: 0 0 6px var(--accent-g); }
+.sc-blue::after  { background: linear-gradient(90deg, transparent, var(--accent), transparent); box-shadow: 0 0 6px var(--accent); }
+.sc-warn::after  { background: linear-gradient(90deg, transparent, var(--warn), transparent); }
+.sc-purple::after{ background: linear-gradient(90deg, transparent, var(--purple), transparent); }
+.stat-lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--text-3); font-family: 'Fira Code', monospace; margin-bottom: 7px; }
+.stat-num { font-family: 'Fira Code', monospace; font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+.sn-green { color: var(--accent-g); text-shadow: 0 0 18px rgba(34,197,94,0.5); }
+.sn-blue  { color: #60a5fa; text-shadow: 0 0 18px rgba(96,165,250,0.4); }
+.sn-warn  { color: var(--warn); text-shadow: 0 0 18px rgba(245,158,11,0.4); }
+.sn-purple{ color: var(--purple); text-shadow: 0 0 18px rgba(167,139,250,0.4); }
+.stat-unit { font-size: 13px; font-weight: 400; opacity: .6; }
+.stat-sub { font-size: 11px; color: var(--text-2); }
+.stat-bar { height: 2px; border-radius: 99px; background: rgba(255,255,255,0.06); margin-top: 10px; overflow: hidden; }
+.sb-fill { height: 100%; border-radius: 99px; }
+
+/* Two-col row */
+.two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; }
+
+/* Route viz */
+.route-section { display: flex; flex-direction: column; gap: 10px; }
+.route-lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--text-3); font-family: 'Fira Code', monospace; margin-bottom: 8px; }
+.route-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.rchip { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-family: 'Fira Code', monospace; font-weight: 600; white-space: nowrap; }
+.rc-neutral { background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-2); }
+.rc-green { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2); color: #86efac; }
+.rc-blue  { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); color: #93c5fd; }
+.rarrow { color: var(--text-3); font-size: 12px; }
+.health-block { display: flex; flex-direction: column; gap: 2px; }
+.hrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.hrow:last-child { border-bottom: none; }
+.hdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.hdot.ok { background: var(--accent-g); box-shadow: 0 0 6px var(--accent-g); }
+.hname { font-size: 12px; color: var(--text-2); flex: 1; }
+.hval { font-size: 11px; font-weight: 700; font-family: 'Fira Code', monospace; color: var(--accent-g); }
+
+/* Ifaces + node strip */
+.irow { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.irow:last-child { border-bottom: none; }
+.ibullet { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ib-g { background: var(--accent-g); box-shadow: 0 0 7px var(--accent-g); }
+.ib-b { background: var(--accent); box-shadow: 0 0 7px var(--accent); }
+.iname { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.isub { font-size: 10px; color: var(--text-3); font-family: 'Fira Code', monospace; }
+.ispd { margin-left: auto; text-align: right; font-family: 'Fira Code', monospace; }
+.idn { font-size: 12px; font-weight: 700; }
+.iup { font-size: 10px; color: var(--text-3); }
+
+/* Node row */
+.node-row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: var(--glass); border: 1px solid var(--border); border-radius: var(--r); }
+.nflag { font-size: 22px; }
+.nbody { flex: 1; }
+.nname { font-size: 14px; font-weight: 700; color: var(--text); }
+.ntype { font-size: 10.5px; color: var(--text-3); font-family: 'Fira Code', monospace; }
+.nlat { font-family: 'Fira Code', monospace; font-size: 22px; font-weight: 700; color: var(--accent-g); text-shadow: 0 0 14px rgba(34,197,94,0.5); }
+.nms { font-size: 10px; color: var(--text-3); text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- Top nav -->
+<div class="topnav">
+  <div class="logo-mark">NS</div>
+  <span class="logo-text">net-split</span>
+  <div class="nav-divider"></div>
+  <div class="tab-strip">
+    <div class="tab active">概览</div>
+    <div class="tab">代理节点</div>
+    <div class="tab">住宅代理</div>
+    <div class="tab">订阅</div>
+    <div class="tab">规则</div>
+    <div class="tab">日志</div>
+    <div class="tab">诊断</div>
+    <div class="tab">设置</div>
+  </div>
+  <div class="topnav-right">
+    <div class="status-pill"><span class="sdot"></span>HEALTHY</div>
+    <div class="toggle-row"><span class="tl">split:on</span><div class="track"><div class="thumb"></div></div></div>
+    <div class="wbs"><button class="wb">─</button><button class="wb">□</button><button class="wb cl">✕</button></div>
+  </div>
+</div>
+
+<!-- Content -->
+<div class="content">
+
+  <!-- Hero -->
+  <div class="hero-banner">
+    <div class="hero-top">
+      <div class="hero-icon">🛡️</div>
+      <div class="hero-body">
+        <div class="hero-badge"><span class="sdot" style="width:5px;height:5px;margin-right:0"></span>HEALTHY · SPLIT ACTIVE</div>
+        <div class="hero-title">透明分流已接管 IPv4 流量 · HK-Premium-01</div>
+        <div class="hero-sub">TUN + DNS Fake-IP 已启用 · 最后更新 14:32:08 · Windows 11 x64</div>
+        <div class="hero-next">下一步：无需操作；国内直连与国外代理正在按规则分流。</div>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <button class="btn btn-p">⊕ 校验配置</button>
+      <button class="btn btn-s">↺ 刷新状态</button>
+      <button class="btn btn-l">⚑ 修复网络</button>
+      <button class="btn btn-l">↩ 回退配置</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card sc-green">
+      <div class="stat-lbl">direct_out</div>
+      <div class="stat-num sn-green">12.4<span class="stat-unit"> MB/s</span></div>
+      <div class="stat-sub">NIC-1 · 中国移动宽带</div>
+      <div class="stat-bar"><div class="sb-fill" style="width:62%;background:linear-gradient(90deg,#22c55e,#16a34a);box-shadow:0 0 4px #22c55e"></div></div>
+    </div>
+    <div class="stat-card sc-blue">
+      <div class="stat-lbl">proxy_out</div>
+      <div class="stat-num sn-blue">3.8<span class="stat-unit"> MB/s</span></div>
+      <div class="stat-sub">NIC-2 · F50 无限流量卡</div>
+      <div class="stat-bar"><div class="sb-fill" style="width:38%;background:linear-gradient(90deg,#3b82f6,#1d4ed8);box-shadow:0 0 4px #3b82f6"></div></div>
+    </div>
+    <div class="stat-card sc-warn">
+      <div class="stat-lbl">node_latency</div>
+      <div class="stat-num sn-warn">42<span class="stat-unit"> ms</span></div>
+      <div class="stat-sub">HK-Premium-01 · auto</div>
+      <div class="stat-bar"><div class="sb-fill" style="width:28%;background:linear-gradient(90deg,#f59e0b,#d97706)"></div></div>
+    </div>
+    <div class="stat-card sc-purple">
+      <div class="stat-lbl">pool_health</div>
+      <div class="stat-num sn-purple">8<span class="stat-unit">/12</span></div>
+      <div class="stat-sub">URL-test · 自动选择</div>
+      <div class="stat-bar"><div class="sb-fill" style="width:67%;background:linear-gradient(90deg,#a78bfa,#7c3aed)"></div></div>
+    </div>
+  </div>
+
+  <!-- Two-col: routing + health -->
+  <div class="two-col">
+    <div class="gc">
+      <div class="route-lbl">routing_path</div>
+      <div class="route-section">
+        <div>
+          <div style="font-size:9.5px;color:var(--text-3);font-family:'Fira Code',monospace;margin-bottom:5px">DIRECT →</div>
+          <div class="route-row">
+            <span class="rchip rc-neutral">HOST</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-green">NIC-1 直连</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-green">CN 目标</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:9.5px;color:var(--text-3);font-family:'Fira Code',monospace;margin-bottom:5px">PROXY →</div>
+          <div class="route-row">
+            <span class="rchip rc-neutral">HOST</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-blue">Mihomo TUN</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-blue">NIC-2</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-blue">HK-01</span>
+            <span class="rarrow">→</span>
+            <span class="rchip rc-neutral">DEST</span>
+          </div>
+        </div>
+        <div style="margin-top:6px;padding:8px 12px;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.12);border-radius:8px;">
+          <div class="irow" style="border:none;padding:5px 0">
+            <span class="ibullet ib-g"></span>
+            <div><div class="iname">NIC-1 · 国内直连</div><div class="isub">192.168.1.2 · 1000Mbps</div></div>
+            <div class="ispd"><div class="idn" style="color:#22c55e">↓ 10.2 MB/s</div><div class="iup">↑ 2.2 MB/s</div></div>
+          </div>
+          <div class="irow" style="border:none;padding:5px 0">
+            <span class="ibullet ib-b"></span>
+            <div><div class="iname">NIC-2 · 代理出口</div><div class="isub">10.0.0.1 · 300Mbps</div></div>
+            <div class="ispd"><div class="idn" style="color:#60a5fa">↓ 2.8 MB/s</div><div class="iup">↑ 1.0 MB/s</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="gc">
+      <div class="route-lbl">interface_health</div>
+      <div class="health-block">
+        <div class="hrow"><span class="hdot ok"></span><span class="hname">TUN + DNS Fake-IP</span><span class="hval">ACTIVE</span></div>
+        <div class="hrow"><span class="hdot ok"></span><span class="hname">NIC-1 · 主宽带</span><span class="hval">UP</span></div>
+        <div class="hrow"><span class="hdot ok"></span><span class="hname">NIC-2 · F50</span><span class="hval">UP</span></div>
+        <div class="hrow"><span class="hdot ok"></span><span class="hname">Mihomo 进程</span><span class="hval">RUNNING</span></div>
+        <div class="hrow"><span class="hdot ok"></span><span class="hname">代理池连通性</span><span class="hval">8/12</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Node row -->
+  <div class="node-row">
+    <span style="font-size:9.5px;color:var(--text-3);font-family:'Fira Code',monospace;min-width:70px">cur_node</span>
+    <span style="font-size:20px">🇭🇰</span>
+    <div class="nbody"><div class="nname">HK-Premium-01</div><div class="ntype">auto-select · VMess · TLS</div></div>
+    <div style="display:flex;align-items:baseline;gap:4px">
+      <span class="nlat">42</span>
+      <span style="font-size:11px;color:var(--text-3);font-family:'Fira Code',monospace">ms</span>
+    </div>
+    <button class="btn btn-s" style="margin-left:12px">◈ 切换节点</button>
+  </div>
+
+</div>
+</body>
+</html>

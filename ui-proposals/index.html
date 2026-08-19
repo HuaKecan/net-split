@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>NetSplit UI 重构方案</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f1117; color: #e8edf2; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+  .picker { display: flex; flex-direction: column; align-items: center; padding: 32px 24px; gap: 40px; }
+  h1 { font-size: 22px; font-weight: 700; color: #f2f5f8; margin-bottom: 4px; }
+  .subtitle { color: #7f8b99; font-size: 13px; }
+  .schemes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; width: 100%; max-width: 1200px; }
+  .scheme-card {
+    border: 1.5px solid #2d343e; border-radius: 12px; overflow: hidden;
+    cursor: pointer; transition: border-color .2s, transform .15s;
+    background: #15181d;
+  }
+  .scheme-card:hover { border-color: #5b8def; transform: translateY(-2px); }
+  .scheme-label {
+    padding: 14px 18px 10px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .scheme-name { font-size: 15px; font-weight: 700; color: #f2f5f8; }
+  .scheme-tag { font-size: 11px; color: #5b8def; background: rgba(91,141,239,.15);
+    padding: 3px 8px; border-radius: 99px; }
+  .scheme-desc { padding: 0 18px 14px; font-size: 12px; color: #7f8b99; line-height: 1.6; }
+  .preview-wrapper { height: 320px; position: relative; overflow: hidden; border-top: 1px solid #2d343e; }
+  .preview-wrapper iframe { width: 200%; height: 200%; transform: scale(0.5); transform-origin: top left;
+    border: none; pointer-events: none; }
+  a.btn {
+    display: inline-block; padding: 10px 28px; background: #5b8def; color: #fff;
+    border-radius: 8px; font-weight: 600; font-size: 14px; text-decoration: none;
+    margin-top: 8px; transition: background .15s;
+  }
+  a.btn:hover { background: #4070c8; }
+</style>
+</head>
+<body>
+<div class="picker">
+  <div>
+    <h1>NetSplit UI 重构方案选择</h1>
+    <p class="subtitle">共 4 套方案，悬停预览，点击查看完整效果</p>
+  </div>
+  <div class="schemes">
+
+    <div class="scheme-card" onclick="location.href='scheme-a.html'">
+      <div class="scheme-label">
+        <span class="scheme-name">方案 A · Dashboard 仪表盘</span>
+        <span class="scheme-tag">信息密度高</span>
+      </div>
+      <div class="scheme-desc">保留左侧导航，顶部突出状态大卡片，4个关键指标横排展示，整体以卡片网格布局为主。适合需要一屏看全所有信息的用户。</div>
+      <div class="preview-wrapper">
+        <iframe src="scheme-a.html"></iframe>
+      </div>
+    </div>
+
+    <div class="scheme-card" onclick="location.href='scheme-b.html'">
+      <div class="scheme-label">
+        <span class="scheme-name">方案 B · Command 指挥台</span>
+        <span class="scheme-tag">沉浸感强</span>
+      </div>
+      <div class="scheme-desc">深色为主，顶部导航栏替代侧边栏，全宽状态条始终可见，内容区使用大字号关键数据展示。适合喜欢简洁专注风格的用户。</div>
+      <div class="preview-wrapper">
+        <iframe src="scheme-b.html"></iframe>
+      </div>
+    </div>
+
+    <div class="scheme-card" onclick="location.href='scheme-c.html'">
+      <div class="scheme-label">
+        <span class="scheme-name">方案 C · Minimal 极简</span>
+        <span class="scheme-tag">轻量干净</span>
+      </div>
+      <div class="scheme-desc">去掉侧边栏，改用图标 Tab 导航，整体留白大，只突出最核心的状态与操作。适合追求简洁、不需要同时查看多模块的用户。</div>
+      <div class="preview-wrapper">
+        <iframe src="scheme-c.html"></iframe>
+      </div>
+    </div>
+
+    <div class="scheme-card" onclick="location.href='scheme-d.html'">
+      <div class="scheme-label">
+        <span class="scheme-name">方案 D · Split 分栏固定</span>
+        <span class="scheme-tag">状态始终可见</span>
+      </div>
+      <div class="scheme-desc">左栏固定显示实时状态（网卡、节点、流量）、右栏切换功能页，两栏始终同时可见。适合需要随时看实时数据又要操作配置的重度用户。</div>
+      <div class="preview-wrapper">
+        <iframe src="scheme-d.html"></iframe>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

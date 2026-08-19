@@ -1,0 +1,52 @@
+# Build and test output
+**/bin/
+**/obj/
+.vs/
+.idea/
+TestResults/
+artifacts/
+publish/
+output/
+runtime/
+*.user
+*.suo
+*.log
+*.pid
+*.pdb
+*.dmp
+
+# Local editor and agent state
+.claude/
+.codegraph/
+.cursor/
+.playwright-cli/
+.codex/
+
+# Runtime binaries, captures, and generated network evidence
+**/mihomo.exe
+**/wintun.dll
+**/geodata/
+*.etl
+*.pcap
+*.pcapng
+*.zip
+
+# Local settings, subscription caches, and protected runtime data
+.env
+.env.*
+!.env.example
+**/settings.json
+**/settings.*.json
+**/runtime-config.yaml
+**/subscriptions/
+**/cache/
+*.key
+*.pem
+*.pfx
+
+# Machine-specific diagnostics and private troubleshooting notes
+docs/P0-RESULTS-*.md
+fix-codex-error.md
+scripts/check-api-health.ps1
+tray-err.txt
+tray-stderr.txt

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 D · Split 分栏固定</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #101216; color: #f2f5f8; font-family: 'Segoe UI Variable','Segoe UI',sans-serif; font-size: 13px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Titlebar */
+.titlebar {
+  height: 44px; background: #0c0f14; border-bottom: 1px solid #1e2530;
+  display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0;
+}
+.logo { display: flex; align-items: center; gap: 8px; }
+.logo-mark { width: 24px; height: 24px; background: #5b8def; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; font-size: 11px; }
+.logo-name { font-weight: 700; font-size: 13px; color: #c8d4e0; }
+.tb-divider { width: 1px; height: 20px; background: #1e2530; margin: 0 4px; }
+.breadcrumb { display: flex; align-items: center; gap: 5px; flex: 1; }
+.bc-muted { font-size: 11px; color: #4a5563; }
+.bc-sep { color: #2d343e; }
+.bc-cur { font-size: 12px; font-weight: 600; color: #c8d4e0; }
+.tb-right { display: flex; align-items: center; gap: 8px; }
+.status-chip { display: flex; align-items: center; gap: 5px; padding: 3px 10px;
+  background: rgba(58,211,157,.1); border: 1px solid rgba(58,211,157,.2);
+  border-radius: 99px; font-size: 11px; font-weight: 600; color: #3ad39d; }
+.sdot { width: 5px; height: 5px; border-radius: 50%; background: #3ad39d; animation: p 2s infinite; }
+@keyframes p { 0%,100%{opacity:1}50%{opacity:.4} }
+.master-toggle { display: flex; align-items: center; gap: 6px; }
+.mt-label { font-size: 11px; color: #8eb4ff; font-weight: 600; }
+.track { width: 32px; height: 17px; background: #5b8def; border-radius: 99px; position: relative; cursor: pointer; }
+.thumb { width: 11px; height: 11px; background: #fff; border-radius: 50%; position: absolute; top: 3px; right: 3px; }
+.wbs { display: flex; }
+.wb { width: 34px; height: 26px; background: transparent; border: none; color: #4a5563;
+  border-radius: 4px; cursor: pointer; font-size: 12px; }
+.wb:hover { background: #1a2133; color: #c8d4e0; }
+.wb.cl:hover { background: #c44a4a; color: #fff; }
+
+/* Body: left status panel + right content */
+.body { flex: 1; display: flex; overflow: hidden; }
+
+/* ─── LEFT STATUS PANEL ─── */
+.status-panel {
+  width: 300px; min-width: 300px;
+  background: #0c0f14; border-right: 1px solid #1e2530;
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.sp-section { padding: 14px 16px; border-bottom: 1px solid #1a2030; }
+.sp-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: #3a4450; font-weight: 700; margin-bottom: 8px; }
+
+/* Big status */
+.big-status { display: flex; flex-direction: column; gap: 4px; }
+.bs-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+  background: rgba(58,211,157,.1); border: 1px solid rgba(58,211,157,.2);
+  border-radius: 99px; font-size: 11px; font-weight: 600; color: #3ad39d; align-self: flex-start; }
+.bs-title { font-size: 13px; font-weight: 700; color: #c8d4e0; margin-top: 2px; }
+.bs-sub { font-size: 11px; color: #4a5563; }
+.bs-next { font-size: 11px; color: #3ad39d; margin-top: 3px; }
+
+/* Traffic gauges */
+.gauge-row { display: flex; flex-direction: column; gap: 8px; }
+.gauge { display: flex; flex-direction: column; gap: 4px; }
+.gauge-header { display: flex; justify-content: space-between; align-items: center; }
+.gauge-name { font-size: 11px; font-weight: 600; color: #7f8b99; }
+.gauge-val { font-size: 13px; font-weight: 800; font-family: monospace; }
+.gauge-val.d { color: #3ad39d; }
+.gauge-val.p { color: #5b8def; }
+.gauge-track { height: 4px; background: #1a2030; border-radius: 99px; overflow: hidden; }
+.gauge-fill { height: 100%; border-radius: 99px; }
+.gauge-detail { font-size: 10px; color: #3a4450; }
+
+/* Node info */
+.node-block { display: flex; align-items: center; gap: 10px; }
+.nflag { font-size: 20px; }
+.nname { font-size: 13px; font-weight: 700; color: #c8d4e0; }
+.ntype { font-size: 10.5px; color: #4a5563; }
+.nlat { margin-left: auto; text-align: right; }
+.nlat-val { font-size: 18px; font-weight: 800; color: #3ad39d; font-family: monospace; line-height: 1; }
+.nlat-ms { font-size: 10px; color: #4a5563; }
+
+/* Health checks */
+.hcheck { display: flex; flex-direction: column; gap: 4px; }
+.hrow { display: flex; align-items: center; gap: 7px; }
+.hrow-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.hrow-dot.ok { background: #3ad39d; }
+.hrow-dot.warn { background: #f4ac45; }
+.hrow-text { font-size: 11.5px; color: #7f8b99; flex: 1; }
+.hrow-val { font-size: 11px; font-weight: 600; }
+.hrow-val.ok { color: #3ad39d; }
+
+/* Pool stats */
+.pool-row { display: flex; justify-content: space-between; align-items: center; }
+.pool-num { font-size: 22px; font-weight: 800; color: #8eb4ff; font-family: monospace; }
+.pool-sub { font-size: 11px; color: #4a5563; }
+.pool-bar { height: 4px; background: #1a2030; border-radius: 99px; margin-top: 8px; overflow: hidden; }
+.pool-fill { height: 100%; background: #5b8def; border-radius: 99px; }
+
+/* Quick actions at bottom of left panel */
+.sp-actions { padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; border-top: 1px solid #1a2030; }
+.qa { padding: 5px 12px; border-radius: 7px; font-size: 11.5px; cursor: pointer; border: none; }
+.qa-primary { background: #5b8def; color: #fff; font-weight: 600; }
+.qa-sec { background: #141820; border: 1px solid #2d343e; color: #7f8b99; }
+
+/* ─── RIGHT CONTENT PANEL ─── */
+.right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Nav tabs for pages */
+.page-tabs {
+  height: 44px; background: #0e1118; border-bottom: 1px solid #1e2530;
+  display: flex; align-items: flex-end; padding: 0 20px; gap: 2px; flex-shrink: 0;
+}
+.ptab { padding: 8px 14px; border-radius: 8px 8px 0 0; font-size: 12px; color: #4a5563;
+  cursor: pointer; border: 1px solid transparent; border-bottom: none; }
+.ptab:hover { color: #7f8b99; }
+.ptab.active { background: #101216; border-color: #1e2530; color: #c8d4e0; font-weight: 600; }
+
+/* Page content */
+.page-content { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+
+/* Section header */
+.sec-header { margin-bottom: 4px; }
+.sec-title { font-size: 15px; font-weight: 700; color: #f2f5f8; }
+.sec-sub { font-size: 12px; color: #4a5563; margin-top: 2px; }
+
+/* Proxy list */
+.proxy-item { background: #0e1118; border: 1px solid #1e2530; border-radius: 9px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+.proxy-item.active { border-color: #5b8def; background: rgba(91,141,239,.06); }
+.proxy-flag { font-size: 18px; }
+.proxy-body { flex: 1; }
+.proxy-name { font-size: 13px; font-weight: 600; color: #c8d4e0; }
+.proxy-type { font-size: 11px; color: #4a5563; }
+.proxy-lat { font-family: monospace; font-size: 13px; font-weight: 700; }
+.proxy-lat.fast { color: #3ad39d; }
+.proxy-lat.mid { color: #f4ac45; }
+.proxy-active-badge { padding: 2px 8px; background: rgba(91,141,239,.15); border: 1px solid rgba(91,141,239,.3); border-radius: 99px; font-size: 10px; color: #8eb4ff; font-weight: 600; }
+.proxy-btn { padding: 4px 12px; border-radius: 6px; border: 1px solid #2d343e; background: transparent; color: #7f8b99; font-size: 11px; cursor: pointer; }
+.proxy-btn.sel { background: #5b8def; border-color: #5b8def; color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- Titlebar -->
+<div class="titlebar">
+  <div class="logo">
+    <div class="logo-mark">N</div>
+    <span class="logo-name">net-split</span>
+  </div>
+  <div class="tb-divider"></div>
+  <div class="breadcrumb">
+    <span class="bc-muted">控制中心</span>
+    <span class="bc-sep">/</span>
+    <span class="bc-cur">代理节点</span>
+  </div>
+  <div class="tb-right">
+    <div class="status-chip"><span class="sdot"></span>分流正常</div>
+    <div class="master-toggle">
+      <span class="mt-label">分流已开启</span>
+      <div class="track"><div class="thumb"></div></div>
+    </div>
+    <div class="wbs">
+      <button class="wb">─</button>
+      <button class="wb">⬜</button>
+      <button class="wb cl">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- Body -->
+<div class="body">
+
+  <!-- Left status panel (always visible) -->
+  <div class="status-panel">
+    <!-- Status -->
+    <div class="sp-section">
+      <div class="sp-label">运行状态</div>
+      <div class="big-status">
+        <div class="bs-badge"><span class="sdot"></span>分流正常</div>
+        <div class="bs-title">IPv4 流量已接管</div>
+        <div class="bs-sub">TUN + DNS Fake-IP · 最后更新 14:32:08</div>
+        <div class="bs-next">下一步：无需操作，按规则分流中。</div>
+      </div>
+    </div>
+
+    <!-- Traffic -->
+    <div class="sp-section">
+      <div class="sp-label">实时流量</div>
+      <div class="gauge-row">
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">网卡1 直连</span>
+            <span class="gauge-val d">12.4 MB/s</span>
+          </div>
+          <div class="gauge-track"><div class="gauge-fill" style="width:62%;background:#3ad39d"></div></div>
+          <div class="gauge-detail">↓ 10.2 · ↑ 2.2 MB/s · 中国移动宽带</div>
+        </div>
+        <div class="gauge">
+          <div class="gauge-header">
+            <span class="gauge-name">网卡2 代理</span>
+            <span class="gauge-val p">3.8 MB/s</span>
+          </div>
+          <div class="gauge-track"><div class="gauge-fill" style="width:38%;background:#5b8def"></div></div>
+          <div class="gauge-detail">↓ 2.8 · ↑ 1.0 MB/s · F50 无限流量卡</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current node -->
+    <div class="sp-section">
+      <div class="sp-label">当前节点</div>
+      <div class="node-block">
+        <div class="nflag">🇭🇰</div>
+        <div>
+          <div class="nname">HK-Premium-01</div>
+          <div class="ntype">自动选择 · VMess · TLS</div>
+        </div>
+        <div class="nlat">
+          <div class="nlat-val">42</div>
+          <div class="nlat-ms">ms</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Health -->
+    <div class="sp-section">
+      <div class="sp-label">接口健康</div>
+      <div class="hcheck">
+        <div class="hrow">
+          <div class="hrow-dot ok"></div>
+          <span class="hrow-text">TUN + DNS</span>
+          <span class="hrow-val ok">已接管</span>
+        </div>
+        <div class="hrow">
+          <div class="hrow-dot ok"></div>
+          <span class="hrow-text">网卡1 · 主宽带</span>
+          <span class="hrow-val ok">可用</span>
+        </div>
+        <div class="hrow">
+          <div class="hrow-dot ok"></div>
+          <span class="hrow-text">网卡2 · F50</span>
+          <span class="hrow-val ok">可用</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pool -->
+    <div class="sp-section">
+      <div class="sp-label">代理池</div>
+      <div class="pool-row">
+        <div>
+          <div class="pool-num">8/12</div>
+          <div class="pool-sub">健康节点</div>
+        </div>
+        <div style="font-size:11px;color:#4a5563;text-align:right">URL-test<br>自动选择</div>
+      </div>
+      <div class="pool-bar"><div class="pool-fill" style="width:67%"></div></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="sp-actions">
+      <button class="qa qa-primary">⊕ 校验配置</button>
+      <button class="qa qa-sec">↺ 刷新</button>
+      <button class="qa qa-sec">⚑ 修复网络</button>
+      <button class="qa qa-sec">↩ 回退配置</button>
+    </div>
+  </div>
+
+  <!-- Right content panel -->
+  <div class="right-panel">
+    <div class="page-tabs">
+      <div class="ptab">概览</div>
+      <div class="ptab active">代理节点</div>
+      <div class="ptab">住宅代理</div>
+      <div class="ptab">订阅</div>
+      <div class="ptab">规则</div>
+      <div class="ptab">日志</div>
+      <div class="ptab">诊断</div>
+      <div class="ptab">设置</div>
+    </div>
+    <div class="page-content">
+      <div class="sec-header">
+        <div class="sec-title">代理节点</div>
+        <div class="sec-sub">选择出口节点，实时延迟测速</div>
+      </div>
+
+      <div class="proxy-item active">
+        <div class="proxy-flag">🇭🇰</div>
+        <div class="proxy-body">
+          <div class="proxy-name">HK-Premium-01</div>
+          <div class="proxy-type">VMess · TLS · 自动选择</div>
+        </div>
+        <span class="proxy-active-badge">使用中</span>
+        <span class="proxy-lat fast">42 ms</span>
+        <button class="proxy-btn sel">已选</button>
+      </div>
+
+      <div class="proxy-item">
+        <div class="proxy-flag">🇸🇬</div>
+        <div class="proxy-body">
+          <div class="proxy-name">SG-Standard-03</div>
+          <div class="proxy-type">VMess · TLS</div>
+        </div>
+        <span class="proxy-lat fast">68 ms</span>
+        <button class="proxy-btn">选择</button>
+      </div>
+
+      <div class="proxy-item">
+        <div class="proxy-flag">🇯🇵</div>
+        <div class="proxy-body">
+          <div class="proxy-name">JP-Lite-07</div>
+          <div class="proxy-type">Trojan · TLS</div>
+        </div>
+        <span class="proxy-lat mid">112 ms</span>
+        <button class="proxy-btn">选择</button>
+      </div>
+
+      <div class="proxy-item">
+        <div class="proxy-flag">🇺🇸</div>
+        <div class="proxy-body">
+          <div class="proxy-name">US-West-02</div>
+          <div class="proxy-type">VMess · WS + TLS</div>
+        </div>
+        <span class="proxy-lat mid">186 ms</span>
+        <button class="proxy-btn">选择</button>
+      </div>
+
+      <div class="proxy-item">
+        <div class="proxy-flag">🇨🇳</div>
+        <div class="proxy-body">
+          <div class="proxy-name">住宅 SOCKS5</div>
+          <div class="proxy-type">住宅代理 · SOCKS5</div>
+        </div>
+        <span class="proxy-lat fast">55 ms</span>
+        <button class="proxy-btn">选择</button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button style="padding:7px 16px;background:#141820;border:1px solid #2d343e;color:#7f8b99;border-radius:8px;font-size:12px;cursor:pointer">⚡ 全部测速</button>
+        <button style="padding:7px 16px;background:#141820;border:1px solid #2d343e;color:#7f8b99;border-radius:8px;font-size:12px;cursor:pointer">☁ 刷新订阅</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
