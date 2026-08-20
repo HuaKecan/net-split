@@ -25,6 +25,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     private readonly Dictionary<string, TrafficSample> _trafficSamples =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly TrafficHistoryBuffer _trafficHistory = new();
+    private readonly ResidentialProxyHealthTracker _residentialProxyHealth = new();
 
     private SplitRouteSettings _settings = new();
     private SplitRouteSettings? _activeSettings;
@@ -787,6 +788,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
 
             var shouldRestart = _settings.Enabled;
             await BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            _residentialProxyHealth.Reset();
             MihomoApiSnapshot? snapshot = null;
             string? snapshotError = null;
             try
@@ -973,6 +975,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
 
             await _controller.SelectProxyAsync(_settings, name, cancellationToken)
                 .ConfigureAwait(false);
+            _residentialProxyHealth.Reset();
             _status = _status with
             {
                 CurrentProxy = name,
@@ -1349,6 +1352,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         bool restartLastKnownGoodOnFailure = true)
     {
         Interlocked.Increment(ref _proxyDelayCacheGeneration);
+        _residentialProxyHealth.Reset();
         EnsureCoreStartAllowed();
         _status = _status with
         {
@@ -1645,16 +1649,23 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
             && dnsStatusKnown
             && dnsEnabled;
         var proxyCoreAvailable = coreTrafficReady && proxyAvailable;
+        if (!proxyCoreAvailable || !_settings.ResidentialProxy.Enabled)
+        {
+            _residentialProxyHealth.Reset();
+        }
+
         var selectedProxyHealthy = proxyCoreAvailable
-            ? apiSnapshot?.SelectedProxyHealthy
+            ? _settings.ResidentialProxy.Enabled
+                ? _residentialProxyHealth.Observe(
+                    apiSnapshot?.SelectedProxyHealthy,
+                    delays?.Proxy.HasValue == true)
+                : apiSnapshot?.SelectedProxyHealthy
             : null;
         var proxyRouteHealthKnown = proxyCoreAvailable
-            && (selectedProxyHealthy.HasValue || _status.ProxyRouteHealthKnown);
+            && selectedProxyHealthy.HasValue;
         var proxyRouteAvailable = proxyCoreAvailable
             && (selectedProxyHealthy
-                ?? (_status.ProxyRouteHealthKnown
-                    ? _status.ProxyRouteAvailable
-                    : proxyAvailable));
+                ?? proxyAvailable);
         proxyRouteAvailable &= proxyAvailable;
         var mode = !_settings.Enabled
             ? RuntimeMode.Disabled
@@ -2879,6 +2890,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     {
         if (_settings.Enabled)
         {
+            _residentialProxyHealth.Reset();
             _status = _status with
             {
                 Mode = RuntimeMode.CoreUnavailable,

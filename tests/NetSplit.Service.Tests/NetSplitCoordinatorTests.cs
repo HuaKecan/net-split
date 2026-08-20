@@ -877,7 +877,8 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         var controller = new FakeController
         {
             SelectedProxyHealthy = true,
-            ResidentialProxyHealthy = false
+            ResidentialProxyHealthy = false,
+            FailResidentialDelay = true
         };
         var paths = new AppPaths(_tempRoot);
         using var settingsStore = new SettingsStore(paths);
@@ -921,6 +922,104 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         Assert.Contains(
             MihomoConfigGenerator.ResidentialProxyName,
             controller.MeasuredProxyNames);
+    }
+
+    [Fact]
+    public async Task ResidentialDelaySuccessOverridesStaleUnhealthySnapshot()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var controller = new FakeController
+        {
+            SelectedProxyHealthy = true,
+            ResidentialProxyHealthy = false
+        };
+        var paths = new AppPaths(_tempRoot);
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(
+            Settings(direct, proxy) with
+            {
+                ResidentialProxy = new ResidentialProxySettings
+                {
+                    Enabled = true,
+                    Host = "residential.example",
+                    AuthenticationEnabled = false,
+                    RouteMode = ResidentialProxyRouteMode.ThroughAirport
+                }
+            }).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            new FakeProcessManager(),
+            controller,
+            logs);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.MaintainAsync(CancellationToken.None).ConfigureAwait(true);
+
+        Assert.Equal(RuntimeMode.Healthy, coordinator.Status.Mode);
+        Assert.True(coordinator.Status.ProxyRouteHealthKnown);
+        Assert.True(coordinator.Status.ProxyRouteAvailable);
+        Assert.Equal(25, coordinator.Status.ProxyDelayMilliseconds);
+        Assert.Equal(
+            ProxyRouteFailureReason.None,
+            coordinator.Status.ProxyRouteFailure);
+    }
+
+    [Fact]
+    public async Task TransientResidentialFailureDoesNotMarkRouteUnavailable()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var controller = new FakeController
+        {
+            SelectedProxyHealthy = true,
+            ResidentialProxyHealthy = true
+        };
+        var paths = new AppPaths(_tempRoot);
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(
+            Settings(direct, proxy) with
+            {
+                ResidentialProxy = new ResidentialProxySettings
+                {
+                    Enabled = true,
+                    Host = "residential.example",
+                    AuthenticationEnabled = false,
+                    RouteMode = ResidentialProxyRouteMode.ThroughAirport
+                }
+            }).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            new FakeProcessManager(),
+            controller,
+            logs);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        controller.ResidentialProxyHealthy = false;
+        controller.FailResidentialDelay = true;
+        await coordinator.MaintainAsync(CancellationToken.None).ConfigureAwait(true);
+
+        Assert.Equal(RuntimeMode.Healthy, coordinator.Status.Mode);
+        Assert.True(coordinator.Status.ProxyRouteHealthKnown);
+        Assert.True(coordinator.Status.ProxyRouteAvailable);
+        Assert.Equal(
+            ProxyRouteFailureReason.None,
+            coordinator.Status.ProxyRouteFailure);
     }
 
     [Fact]
