@@ -6,18 +6,26 @@ namespace NetSplit.Tray;
 public sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly NamedPipeRpcClient _client = new();
+    private readonly TrayIconSet _icons = new();
+    private readonly TrayNotificationTracker _notificationTracker = new();
+    private readonly TrayStartupGrace _startupGrace;
     private readonly NotifyIcon _notifyIcon;
     private readonly MainForm _mainForm;
     private readonly ToolStripMenuItem _headerItem;
     private readonly ToolStripMenuItem _toggleItem;
     private readonly ToolStripMenuItem _nodeItem;
+    private readonly ToolStripMenuItem _silentItem;
     private readonly System.Windows.Forms.Timer _timer = new();
 
     private string _nodeMenuSignature = string.Empty;
     private bool _refreshing;
+    private int _refreshFailures;
 
     public TrayApplicationContext(bool startMinimized)
     {
+        _startupGrace = new TrayStartupGrace(
+            startMinimized,
+            DateTimeOffset.UtcNow);
         _mainForm = new MainForm(_client);
 
         var menu = new ContextMenuStrip();
@@ -41,17 +49,27 @@ public sealed class TrayApplicationContext : ApplicationContext
             null,
             async (_, _) => await RunAsync(RpcCommands.Repair).ConfigureAwait(true));
         menu.Items.Add(new ToolStripSeparator());
+        _silentItem = new ToolStripMenuItem(
+            "静默通知",
+            null,
+            (_, _) => UserPreferences.SilentNotifications =
+                !UserPreferences.SilentNotifications)
+        {
+            Checked = UserPreferences.SilentNotifications
+        };
+        menu.Items.Add(_silentItem);
         menu.Items.Add("退出界面", null, (_, _) => ExitThread());
         menu.Opening += async (_, _) => await RefreshAsync().ConfigureAwait(true);
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Shield,
-            Text = "net-split",
+            Icon = _icons.Transitioning,
+            Text = "net-split · 正在连接服务",
             Visible = true,
             ContextMenuStrip = menu
         };
         _notifyIcon.DoubleClick += (_, _) => ShowMainForm();
+        UserPreferences.Changed += OnUserPreferencesChanged;
 
         _timer.Interval = 5000;
         _timer.Tick += async (_, _) => await RefreshAsync().ConfigureAwait(true);
@@ -153,9 +171,10 @@ public sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
-            var modeText = ModeVisuals.Text(status);
-            _notifyIcon.Text = $"net-split - {modeText}";
-            _headerItem.Text = $"net-split - {modeText}";
+            _startupGrace.ObserveConnected();
+            _refreshFailures = 0;
+            var presentation = TrayStatusPresenter.FromStatus(status);
+            ApplyPresentation(presentation);
             _toggleItem.Text = status.Enabled ? "关闭分流" : "开启分流";
             _toggleItem.Enabled = true;
             _nodeItem.Enabled = true;
@@ -167,8 +186,38 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _notifyIcon.Text = "net-split - 服务离线";
-            _headerItem.Text = "net-split - 服务离线";
+            _refreshFailures++;
+            if (_startupGrace.ShouldSuppressOffline(DateTimeOffset.UtcNow))
+            {
+                DisplayPresentation(new TrayStatusPresentation(
+                    TrayHealthLevel.Transitioning,
+                    "service-startup-wait",
+                    "net-split - 正在等待后台服务",
+                    "net-split · 正在等待后台服务",
+                    string.Empty));
+                _toggleItem.Text = "服务启动后可用";
+                _toggleItem.Enabled = false;
+                _nodeItem.Enabled = false;
+                return;
+            }
+
+            var offline = TrayStatusPresentation.Offline;
+            var decision = _notificationTracker.Observe(offline);
+            if (_refreshFailures >= 2)
+            {
+                DisplayPresentation(offline);
+                ShowAutomaticNotification(decision, offline);
+            }
+            else
+            {
+                DisplayPresentation(new TrayStatusPresentation(
+                    TrayHealthLevel.Transitioning,
+                    "service-reconnecting",
+                    "net-split - 正在重新连接服务",
+                    "net-split · 正在重新连接服务",
+                    string.Empty));
+            }
+
             _toggleItem.Text = "重新连接后开启";
             _toggleItem.Enabled = false;
             _nodeItem.Enabled = false;
@@ -177,6 +226,59 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _refreshing = false;
         }
+    }
+
+    private void ApplyPresentation(TrayStatusPresentation presentation)
+    {
+        DisplayPresentation(presentation);
+        ShowAutomaticNotification(
+            _notificationTracker.Observe(presentation),
+            presentation);
+    }
+
+    private void DisplayPresentation(TrayStatusPresentation presentation)
+    {
+        _notifyIcon.Icon = _icons.Resolve(presentation.Health);
+        _notifyIcon.Text = presentation.ToolTipText;
+        _headerItem.Text = presentation.HeaderText;
+    }
+
+    private void ShowAutomaticNotification(
+        TrayNotificationKind notification,
+        TrayStatusPresentation presentation)
+    {
+        if (notification == TrayNotificationKind.None
+            || UserPreferences.SilentNotifications)
+        {
+            return;
+        }
+
+        if (notification == TrayNotificationKind.Recovered)
+        {
+            _notifyIcon.ShowBalloonTip(
+                5000,
+                "net-split 已恢复",
+                "双网卡分流已经恢复正常。",
+                ToolTipIcon.Info);
+            return;
+        }
+
+        _notifyIcon.ShowBalloonTip(
+            7000,
+            presentation.Health == TrayHealthLevel.Critical
+                ? "net-split 需要处理"
+                : "net-split 网络降级",
+            string.IsNullOrWhiteSpace(presentation.NotificationText)
+                ? presentation.HeaderText
+                : presentation.NotificationText,
+            presentation.Health == TrayHealthLevel.Critical
+                ? ToolTipIcon.Error
+                : ToolTipIcon.Warning);
+    }
+
+    private void OnUserPreferencesChanged(object? sender, EventArgs e)
+    {
+        _silentItem.Checked = UserPreferences.SilentNotifications;
     }
 
     private void RebuildNodeMenuIfChanged(
@@ -245,8 +347,10 @@ public sealed class TrayApplicationContext : ApplicationContext
         Application.Idle -= OnFirstIdle;
         _timer.Stop();
         _timer.Dispose();
+        UserPreferences.Changed -= OnUserPreferencesChanged;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _icons.Dispose();
         _mainForm.Dispose();
         base.ExitThreadCore();
     }

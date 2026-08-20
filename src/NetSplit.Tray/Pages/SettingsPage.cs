@@ -11,6 +11,7 @@ public sealed class SettingsPage : PageBase
     private readonly Label _proxyDetail = new();
     private readonly ThemedButton _saveBindings = new();
     private readonly ComboBox _theme = new();
+    private readonly ToggleSwitch _silentNotificationsToggle = new();
     private readonly Label _mihomoValue = new();
     private readonly Label _geodataValue = new();
 
@@ -18,6 +19,7 @@ public sealed class SettingsPage : PageBase
     private string _savedDirectId = string.Empty;
     private string _savedProxyId = string.Empty;
     private bool _syncingAdapters;
+    private bool _syncingUserPreferences;
 
     public SettingsPage(NamedPipeRpcClient client)
         : base(
@@ -42,7 +44,7 @@ public sealed class SettingsPage : PageBase
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 236));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 156));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 224));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
         root.Controls.Add(BuildAdapterCard(), 0, 0);
         root.Controls.Add(BuildEnvironmentCard(), 0, 1);
@@ -266,7 +268,7 @@ public sealed class SettingsPage : PageBase
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             BackColor = theme.BackgroundSurface,
             Margin = Padding.Empty
         };
@@ -274,6 +276,7 @@ public sealed class SettingsPage : PageBase
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, UiMetrics.ControlHeight));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         table.Controls.Add(UiStyle.SectionTitle("界面"), 0, 0);
         table.Controls.Add(UiStyle.FieldLabel("主题"), 0, 1);
@@ -299,16 +302,74 @@ public sealed class SettingsPage : PageBase
             };
         };
         table.Controls.Add(_theme, 0, 2);
+        table.Controls.Add(BuildNotificationPreference(), 0, 3);
         table.Controls.Add(new Label
         {
-            Text = "选择会保存在当前 Windows 用户下。",
+            Text = "界面与通知偏好只保存在当前 Windows 用户下。",
             Font = UiFonts.Caption,
             ForeColor = theme.TextMuted,
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
-        }, 0, 3);
+        }, 0, 4);
         panel.Controls.Add(table);
         return panel;
+    }
+
+    private TableLayoutPanel BuildNotificationPreference()
+    {
+        var theme = ThemeManager.Current;
+        var row = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = theme.BackgroundSurface,
+            Margin = Padding.Empty
+        };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var copy = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            BackColor = theme.BackgroundSurface,
+            Margin = new Padding(0, UiMetrics.SpaceMd, 0, 0)
+        };
+        copy.Controls.Add(new Label
+        {
+            Text = "静默通知",
+            AutoSize = true,
+            Font = UiFonts.CaptionStrong,
+            ForeColor = theme.TextPrimary,
+            Margin = Padding.Empty
+        });
+        copy.Controls.Add(new Label
+        {
+            Text = "关闭自动状态弹窗，手动操作错误仍会提示。",
+            AutoSize = true,
+            Font = UiFonts.Caption,
+            ForeColor = theme.TextMuted,
+            Margin = new Padding(0, 2, 0, 0)
+        });
+        row.Controls.Add(copy, 0, 0);
+
+        _silentNotificationsToggle.AccessibleName = "静默通知";
+        _silentNotificationsToggle.Anchor = AnchorStyles.Right;
+        _silentNotificationsToggle.Margin = new Padding(UiMetrics.SpaceLg, 0, 0, 0);
+        _silentNotificationsToggle.SetCheckedSilently(
+            UserPreferences.SilentNotifications);
+        _silentNotificationsToggle.CheckedChanged += (_, _) =>
+        {
+            if (!_syncingUserPreferences)
+            {
+                UserPreferences.SilentNotifications =
+                    _silentNotificationsToggle.Checked;
+            }
+        };
+        row.Controls.Add(_silentNotificationsToggle, 1, 0);
+        return row;
     }
 
     private Panel BuildRuntimeSection()
@@ -709,6 +770,17 @@ public sealed class SettingsPage : PageBase
             var settings = await settingsTask.ConfigureAwait(true)
                 ?? new ClientSettingsSnapshot();
             var adapters = await adaptersTask.ConfigureAwait(true) ?? [];
+
+            _syncingUserPreferences = true;
+            try
+            {
+                _silentNotificationsToggle.SetCheckedSilently(
+                    UserPreferences.SilentNotifications);
+            }
+            finally
+            {
+                _syncingUserPreferences = false;
+            }
 
             PopulateAdapters(adapters, settings);
             SetRuntimeValue(

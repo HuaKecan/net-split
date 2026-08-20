@@ -193,6 +193,11 @@ public sealed class LayoutSmokeTests
                 AssertDiagnosticsActionsFit(diagnosticsPage);
             }
 
+            if (page is SettingsPage settingsPage)
+            {
+                AssertSettingsNotificationPreferenceFits(settingsPage);
+            }
+
             AssertRoundedManagementSurface(page);
         }
 
@@ -454,6 +459,16 @@ public sealed class LayoutSmokeTests
             $"The diagnostic action bar overflows its parent: {actionBar.Bounds}.");
     }
 
+    private static void AssertSettingsNotificationPreferenceFits(SettingsPage page)
+    {
+        var toggle = Enumerate(page)
+            .OfType<ToggleSwitch>()
+            .Single(control => control.AccessibleName == "静默通知");
+        AssertInsideParent(toggle);
+        Assert.NotNull(toggle.Parent);
+        AssertInsideParent(toggle.Parent!);
+    }
+
     private static void AssertRoundedManagementSurface(PageBase page)
     {
         foreach (var card in Enumerate(page).OfType<Card>())
@@ -575,6 +590,11 @@ public sealed class LayoutSmokeTests
             if (page is ProxiesPage proxiesPage)
             {
                 AssertProxyToolbarFits(proxiesPage);
+            }
+
+            if (page is SettingsPage settingsPage)
+            {
+                AssertSettingsNotificationPreferenceFits(settingsPage);
             }
         }
 
