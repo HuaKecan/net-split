@@ -58,7 +58,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             Checked = UserPreferences.SilentNotifications
         };
         menu.Items.Add(_silentItem);
-        menu.Items.Add("退出界面", null, (_, _) => ExitThread());
+        menu.Items.Add("退出界面", null, (_, _) => RequestUserExit());
         menu.Opening += async (_, _) => await RefreshAsync().ConfigureAwait(true);
 
         _notifyIcon = new NotifyIcon
@@ -340,6 +340,12 @@ public sealed class TrayApplicationContext : ApplicationContext
             "net-split",
             message,
             ToolTipIcon.Error);
+    }
+
+    private void RequestUserExit()
+    {
+        TrayDiagnostics.MarkUserExit();
+        ExitThread();
     }
 
     protected override void ExitThreadCore()

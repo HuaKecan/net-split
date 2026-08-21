@@ -208,53 +208,50 @@ public sealed class MainForm : Form
 
         var location = new FlowLayoutPanel
         {
-            FlowDirection = FlowDirection.LeftToRight,
+            FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoSize = true,
             Dock = DockStyle.Left,
             BackColor = theme.BackgroundChrome,
             Margin = Padding.Empty
         };
-        location.Controls.Add(new Label
-        {
-            Text = "控制中心",
-            Font = UiFonts.Caption,
-            ForeColor = theme.TextMuted,
-            AutoSize = true,
-            Margin = new Padding(0, 6, UiMetrics.SpaceSm, 0)
-        });
-        location.Controls.Add(new Label
-        {
-            Text = "/",
-            Font = UiFonts.Caption,
-            ForeColor = theme.BorderStrong,
-            AutoSize = true,
-            Margin = new Padding(0, 6, UiMetrics.SpaceSm, 0)
-        });
         _sectionLabel = new Label
         {
             Text = PageTitle(_activeKind),
             Font = UiFonts.BodyStrong,
             ForeColor = theme.TextPrimary,
             AutoSize = true,
-            Margin = new Padding(0, 5, 0, 0)
+            Margin = Padding.Empty
         };
         location.Controls.Add(_sectionLabel);
+        location.Controls.Add(new Label
+        {
+            Text = "控制中心  ·  本机透明分流",
+            Font = UiFonts.Caption,
+            ForeColor = theme.TextMuted,
+            AutoSize = true,
+            Margin = new Padding(0, 1, 0, 0)
+        });
         AttachDragHandlers(location);
         table.Controls.Add(location, 0, 0);
 
-        var controls = new FlowLayoutPanel
+        var controls = new StatusCluster
         {
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             AutoSize = true,
             Anchor = AnchorStyles.Right,
-            BackColor = theme.BackgroundChrome,
+            BackColor = theme.BackgroundSurface2,
+            Padding = new Padding(
+                UiMetrics.SpaceMd,
+                UiMetrics.SpaceXs,
+                UiMetrics.SpaceMd,
+                UiMetrics.SpaceXs),
             Margin = Padding.Empty
         };
         _topBadge = new ModeBadge
         {
-            Margin = new Padding(0, 3, UiMetrics.SpaceLg, 0)
+            Margin = new Padding(0, 0, UiMetrics.SpaceLg, 0)
         };
         _toggleLabel = new Label
         {
@@ -262,12 +259,14 @@ public sealed class MainForm : Form
             Font = UiFonts.BodyStrong,
             ForeColor = theme.TextPrimary,
             TextAlign = ContentAlignment.MiddleLeft,
-            Text = "分流已关闭",
-            Margin = new Padding(0, 6, UiMetrics.SpaceSm, 0)
+            Text = "分流",
+            Margin = new Padding(0, 5, UiMetrics.SpaceSm, 0),
+            BackColor = theme.BackgroundSurface2
         };
         _masterToggle = new ToggleSwitch
         {
-            Margin = new Padding(0, 4, 0, 0)
+            Margin = new Padding(0, 1, 0, 0),
+            BackColor = theme.BackgroundSurface2
         };
         _masterToggle.CheckedChanged += async (_, _) =>
             await OnMasterToggleChangedAsync().ConfigureAwait(true);
@@ -690,10 +689,8 @@ public sealed class MainForm : Form
 
         _topBadge.SetMode(status.Mode);
         SyncToggle(status.Enabled);
-        _toggleLabel.Text = status.Enabled ? "分流已开启" : "分流已关闭";
-        _toggleLabel.ForeColor = status.Enabled
-            ? ThemeManager.Current.AccentText
-            : ThemeManager.Current.TextSecondary;
+        _toggleLabel.Text = "分流";
+        _toggleLabel.ForeColor = ThemeManager.Current.TextSecondary;
         _masterToggle.Enabled = !_busy
             && status.Mode is not RuntimeMode.Starting
             and not RuntimeMode.Stopping
@@ -734,7 +731,7 @@ public sealed class MainForm : Form
         }
 
         _topBadge.SetMode(RuntimeMode.CoreUnavailable);
-        _toggleLabel.Text = "服务离线 · 状态未知";
+        _toggleLabel.Text = "分流";
         _toggleLabel.ForeColor = ThemeManager.Current.Danger;
         _masterToggle.Enabled = false;
         if (!_serviceStateLabel.IsDisposed)
@@ -978,48 +975,45 @@ public sealed class MainForm : Form
                 : _hovered
                     ? theme.SidebarHover
                     : theme.SidebarBackground;
-            var foreground = _selected
+            var foreground = _selected || _hovered
                 ? theme.SidebarText
-                : _hovered
-                    ? theme.SidebarText
-                    : theme.SidebarMuted;
-            var iconColor = _selected ? theme.AccentText : foreground;
+                : theme.SidebarMuted;
+            var iconColor = _selected ? theme.OnAccent : foreground;
 
-            // Item background (inset 2px from left to leave room for indicator bar)
-            var rect = new Rectangle(2, 0, Width - 3, Height - 1);
+            var rect = new Rectangle(0, 1, Width - 1, Height - 2);
             using var path = UiDrawing.Rounded(rect, UiMetrics.RadiusMd);
             using (var brush = new SolidBrush(background))
             {
                 graphics.FillPath(brush, path);
             }
 
-            // 3px accent indicator bar on the left when selected
             if (_selected)
             {
-                var barWidth = UiMetrics.Scale(this, 3);
-                var barHeight = UiMetrics.Scale(this, 18);
-                var barY = (Height - barHeight) / 2;
-                using var barPath = UiDrawing.Rounded(
-                    new Rectangle(0, barY, barWidth, barHeight), barWidth / 2);
-                using var barBrush = new SolidBrush(theme.Accent);
-                graphics.FillPath(barBrush, barPath);
+                using var selectionPen = new Pen(
+                    UiDrawing.Blend(theme.Accent, theme.Border, 0.34f));
+                graphics.DrawPath(selectionPen, path);
             }
 
             if (Focused)
             {
-                var focusRect = Rectangle.Inflate(rect, -2, -2);
+                var focusRect = Rectangle.Inflate(rect, -3, -3);
                 using var focusPath = UiDrawing.Rounded(focusRect, UiMetrics.RadiusSm);
-                using var focusPen = new Pen(theme.Accent, 1.5f);
+                using var focusPen = new Pen(theme.Accent, 2f);
                 graphics.DrawPath(focusPen, focusPath);
             }
 
             int Scale(int value) => UiMetrics.Scale(this, value);
-            var iconRect = new Rectangle(Scale(9), Scale(6), Scale(28), Scale(28));
-            // Icon background: accent-tinted pill when selected
+            var iconRect = new Rectangle(Scale(8), Scale(8), Scale(28), Scale(28));
             if (_selected)
             {
                 using var iconPath = UiDrawing.Rounded(iconRect, UiMetrics.RadiusMd);
-                using var iconFill = new SolidBrush(UiDrawing.WithAlpha(theme.Accent, 42));
+                using var iconFill = new SolidBrush(theme.Accent);
+                graphics.FillPath(iconFill, iconPath);
+            }
+            else if (_hovered)
+            {
+                using var iconPath = UiDrawing.Rounded(iconRect, UiMetrics.RadiusMd);
+                using var iconFill = new SolidBrush(theme.SidebarSelected);
                 graphics.FillPath(iconFill, iconPath);
             }
 
@@ -1034,9 +1028,9 @@ public sealed class MainForm : Form
                     | TextFormatFlags.SingleLine
                     | TextFormatFlags.NoPadding);
             var textRect = new Rectangle(
-                Scale(47),
+                Scale(48),
                 0,
-                Width - Scale(57),
+                Width - Scale(58),
                 Height);
             TextRenderer.DrawText(
                 graphics,
@@ -1225,6 +1219,53 @@ public sealed class MainForm : Form
             base.OnPaint(e);
             using var pen = new Pen(ThemeManager.Current.Border);
             e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
+    }
+
+    private sealed class StatusCluster : FlowLayoutPanel
+    {
+        public StatusCluster()
+        {
+            SetStyle(
+                ControlStyles.UserPaint
+                | ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.ResizeRedraw,
+                true);
+        }
+
+        protected override void OnResize(EventArgs eventargs)
+        {
+            base.OnResize(eventargs);
+            if (Width < 3 || Height < 3)
+            {
+                Region?.Dispose();
+                Region = null;
+                return;
+            }
+
+            using var path = UiDrawing.Rounded(
+                new Rectangle(0, 0, Width, Height),
+                UiMetrics.Scale(this, UiMetrics.RadiusLg));
+            Region?.Dispose();
+            Region = new Region(path);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (Width < 3 || Height < 3)
+            {
+                return;
+            }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using var path = UiDrawing.Rounded(
+                rect,
+                UiMetrics.Scale(this, UiMetrics.RadiusLg));
+            using var pen = new Pen(ThemeManager.Current.Border);
+            e.Graphics.DrawPath(pen, path);
         }
     }
 

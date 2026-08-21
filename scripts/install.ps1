@@ -264,6 +264,7 @@ $sourceMihomoHashFile = "$sourceMihomoExe.sha256"
 $rpcLibrarySource = Join-Path $PSScriptRoot "lib\NetSplit-Rpc.ps1"
 $p0ObserveSource = Join-Path $PSScriptRoot "p0-observe.ps1"
 $startupLibrarySource = Join-Path $PSScriptRoot "lib\NetSplit-Startup.ps1"
+$startupLauncherSource = Join-Path $PSScriptRoot "start-tray.ps1"
 $startupRepairSource = Join-Path $PSScriptRoot "repair-startup.ps1"
 $startupStatusSource = Join-Path $PSScriptRoot "startup-status.ps1"
 if (-not (Test-Path -LiteralPath $sourceServiceExe -PathType Leaf) `
@@ -274,6 +275,7 @@ if (-not (Test-Path -LiteralPath $sourceServiceExe -PathType Leaf) `
         -or -not (Test-Path -LiteralPath $rpcLibrarySource -PathType Leaf) `
         -or -not (Test-Path -LiteralPath $p0ObserveSource -PathType Leaf) `
         -or -not (Test-Path -LiteralPath $startupLibrarySource -PathType Leaf) `
+        -or -not (Test-Path -LiteralPath $startupLauncherSource -PathType Leaf) `
         -or -not (Test-Path -LiteralPath $startupRepairSource -PathType Leaf) `
         -or -not (Test-Path -LiteralPath $startupStatusSource -PathType Leaf)) {
     throw "Published binaries were not found. Run scripts\publish.ps1 first."
@@ -407,6 +409,9 @@ Copy-Item -LiteralPath $rpcLibrarySource `
     -Destination (Join-Path $installedScriptLibrary "NetSplit-Rpc.ps1") -Force
 Copy-Item -LiteralPath $startupLibrarySource `
     -Destination (Join-Path $installedScriptLibrary "NetSplit-Startup.ps1") -Force
+$installedStartupLauncher = Join-Path $InstallRoot "start-tray.ps1"
+Copy-Item -LiteralPath $startupLauncherSource `
+    -Destination $installedStartupLauncher -Force
 Copy-Item -LiteralPath $startupRepairSource `
     -Destination (Join-Path $InstallRoot "repair-startup.ps1") -Force
 Copy-Item -LiteralPath $startupStatusSource `
@@ -547,6 +552,7 @@ Set-NetSplitServiceStartup `
 Register-NetSplitTrayTask `
     -TaskName $taskName `
     -TrayExecutable $trayExe `
+    -TrayLauncherScript $installedStartupLauncher `
     -UserName $identity.Name
 
 Start-Service -Name $serviceName

@@ -55,8 +55,8 @@ public sealed class UiTheme
         BackgroundSurface = Rgb(0x19, 0x1D, 0x23),
         BackgroundSurface2 = Rgb(0x21, 0x26, 0x2E),
         BackgroundElevated = Rgb(0x25, 0x2A, 0x33),
-        Border = Rgb(0x2D, 0x34, 0x3E),
-        BorderStrong = Rgb(0x46, 0x50, 0x5D),
+        Border = Rgb(0x29, 0x30, 0x39),
+        BorderStrong = Rgb(0x42, 0x4C, 0x59),
         TextPrimary = Rgb(0xF2, 0xF5, 0xF8),
         TextSecondary = Rgb(0xB2, 0xBC, 0xC8),
         TextMuted = Rgb(0x7F, 0x8B, 0x99),
@@ -68,9 +68,9 @@ public sealed class UiTheme
         Warning = Rgb(0xF4, 0xAC, 0x45),
         Danger = Rgb(0xF3, 0x72, 0x72),
         SidebarBackground = Rgb(0x0B, 0x0D, 0x11),
-        SidebarHover = Rgb(0x16, 0x1A, 0x20),
-        SidebarSelected = Rgb(0x20, 0x27, 0x32),
-        SidebarText = Rgb(0xF4, 0xF7, 0xFA),
+        SidebarHover = Rgb(0x15, 0x19, 0x1F),
+        SidebarSelected = Rgb(0x1B, 0x25, 0x32),
+        SidebarText = Rgb(0xED, 0xF3, 0xFA),
         SidebarMuted = Rgb(0x7F, 0x8A, 0x98),
         SuccessSoft = Color.FromArgb(30, 0x3A, 0xD3, 0x9D),
         WarningSoft = Color.FromArgb(30, 0xF4, 0xAC, 0x45),
@@ -84,9 +84,9 @@ public sealed class UiTheme
         BackgroundPage = Rgb(0xF2, 0xF5, 0xF8),
         BackgroundChrome = Color.White,
         BackgroundSurface = Color.White,
-        BackgroundSurface2 = Rgb(0xF8, 0xFA, 0xFC),
+        BackgroundSurface2 = Rgb(0xF5, 0xF8, 0xFB),
         BackgroundElevated = Rgb(0xFB, 0xFC, 0xFD),
-        Border = Rgb(0xD4, 0xDE, 0xE8),
+        Border = Rgb(0xD7, 0xE0, 0xE8),
         BorderStrong = Rgb(0xA9, 0xB9, 0xC9),
         TextPrimary = Rgb(0x17, 0x24, 0x34),
         TextSecondary = Rgb(0x52, 0x64, 0x78),
@@ -99,9 +99,9 @@ public sealed class UiTheme
         Warning = Rgb(0xA8, 0x66, 0x18),
         Danger = Rgb(0xC4, 0x4A, 0x4A),
         SidebarBackground = Rgb(0xF7, 0xF9, 0xFB),
-        SidebarHover = Rgb(0xEA, 0xF0, 0xF6),
-        SidebarSelected = Rgb(0xDF, 0xEE, 0xFA),
-        SidebarText = Rgb(0x15, 0x4B, 0x80),
+        SidebarHover = Rgb(0xED, 0xF2, 0xF7),
+        SidebarSelected = Rgb(0xE5, 0xEF, 0xF8),
+        SidebarText = Rgb(0x13, 0x3F, 0x6C),
         SidebarMuted = Rgb(0x78, 0x8A, 0x9F),
         SuccessSoft = Color.FromArgb(25, 0x12, 0x7C, 0x62),
         WarningSoft = Color.FromArgb(25, 0xA8, 0x66, 0x18),
@@ -132,7 +132,7 @@ public static class UiMetrics
     public const int RadiusXl = 10;
 
     public const int ControlHeight = 40;
-    public const int NavItemHeight = 44;
+    public const int NavItemHeight = 40;
 
     public const float FontBadge = 8.5f;
     public const float FontCaption = 9.25f;

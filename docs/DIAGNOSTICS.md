@@ -36,8 +36,16 @@ tray task, run:
 ```
 
 The report checks the installed service path, delayed automatic start, task
-user/action, logon delay, missed-trigger recovery and retry policy. It also
-includes a read-only RPC snapshot of Mihomo, TUN, DNS and adapter readiness.
+user/action, logon delay, the installed tray launcher, missed-trigger recovery
+and retry policy. It also reports whether per-user startup/tray diagnostic logs
+exist and includes a read-only RPC snapshot of Mihomo, TUN, DNS and adapter
+readiness.
+
+The tray launcher watches the process during startup and retries transient
+early exits before returning a failure to Task Scheduler. Its bounded logs are
+stored under `%LocalAppData%\net-split\logs`. Tray exception records omit
+exception messages so subscription URLs, proxy credentials and controller
+secrets are not copied into those logs.
 
 To repair only those registrations without changing the saved split state or
 starting/stopping the service, run:

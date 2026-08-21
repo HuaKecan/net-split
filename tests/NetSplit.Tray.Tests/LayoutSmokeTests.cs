@@ -145,6 +145,7 @@ public sealed class LayoutSmokeTests
             mainForm.PerformLayout();
             AssertTextHeights(mainForm);
             AssertSidebarFooterFits(mainForm);
+            SaveVisualSnapshotWhenRequested(mainForm);
         }
 
         using var host = new Form
@@ -388,6 +389,7 @@ public sealed class LayoutSmokeTests
             .OfType<FlowLayoutPanel>()
             .Single(panel => panel.AutoScroll && panel.Controls.Count == 10);
         Assert.False(navigation.HorizontalScroll.Visible);
+        Assert.False(navigation.VerticalScroll.Visible);
         foreach (Control item in navigation.Controls)
         {
             Assert.True(
@@ -413,6 +415,29 @@ public sealed class LayoutSmokeTests
             && bounds.Bottom <= card.ClientSize.Height - card.Padding.Bottom,
             $"Control '{control.Text}' is clipped in its card: "
             + $"{bounds} within {card.ClientRectangle}, padding {card.Padding}.");
+    }
+
+    private static void SaveVisualSnapshotWhenRequested(Form form)
+    {
+        var outputPath = Environment.GetEnvironmentVariable(
+            "NETSPLIT_UI_SNAPSHOT");
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        var fullPath = Path.GetFullPath(outputPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        form.Show();
+        Application.DoEvents();
+        form.PerformLayout();
+        Application.DoEvents();
+        using var bitmap = new Bitmap(
+            form.ClientSize.Width,
+            form.ClientSize.Height);
+        form.DrawToBitmap(bitmap, form.ClientRectangle);
+        bitmap.Save(fullPath, System.Drawing.Imaging.ImageFormat.Png);
+        form.Hide();
     }
 
     private static void AssertInsideParent(Control control)

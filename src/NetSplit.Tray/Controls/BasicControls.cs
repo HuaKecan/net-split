@@ -453,7 +453,7 @@ public sealed class ThemedButton : Control
             using var focusPen = new Pen(
                 _kind == ButtonKind.Accent ? theme.OnAccent : theme.Accent)
             {
-                DashStyle = DashStyle.Dot
+                Width = 2f
             };
             graphics.DrawPath(focusPen, focusPath);
         }
@@ -527,7 +527,7 @@ public sealed class ThemedButton : Control
         DrawContent(graphics, textColor, rect);
         if (Focused)
         {
-            using var pen = new Pen(ThemeManager.Current.Accent) { DashStyle = DashStyle.Dot };
+            using var pen = new Pen(ThemeManager.Current.Accent, 2f);
             graphics.DrawRectangle(pen, Rectangle.Inflate(rect, -2, -2));
         }
     }
@@ -998,7 +998,7 @@ public sealed class ModeBadge : Control
     {
         _mode = mode;
         AccessibleName = $"状态：{ModeVisuals.Text(mode)}";
-        var shouldPulse = mode == RuntimeMode.Healthy;
+        var shouldPulse = mode is RuntimeMode.Starting or RuntimeMode.Stopping;
         if (shouldPulse && !_pulseTimer.Enabled)
         {
             _pulsePhase = 0f;
@@ -1065,8 +1065,7 @@ public sealed class ModeBadge : Control
         var dotX = UiMetrics.Scale(this, 10);
         var dotY = (Height - dotSize) / 2;
 
-        // Pulse glow halo for Healthy state
-        if (_mode == RuntimeMode.Healthy && _pulseTimer.Enabled)
+        if (_pulseTimer.Enabled)
         {
             var pulse = (MathF.Sin(_pulsePhase) + 1f) / 2f; // 0..1
             var haloAlpha = (int)(pulse * 60);

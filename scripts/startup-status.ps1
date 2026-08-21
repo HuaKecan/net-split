@@ -16,6 +16,7 @@ if (-not $InstallRoot) {
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 $serviceExe = Join-Path $InstallRoot "service\NetSplit.Service.exe"
 $trayExe = Join-Path $InstallRoot "tray\NetSplit.Tray.exe"
+$trayLauncher = Join-Path $InstallRoot "start-tray.ps1"
 $marker = Join-Path $env:ProgramData "net-split\runtime\startup.force-disabled"
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $startup = Get-NetSplitStartupSnapshot `
@@ -23,6 +24,7 @@ $startup = Get-NetSplitStartupSnapshot `
     -TaskName $script:NetSplitDefaultTaskName `
     -ServiceExecutable $serviceExe `
     -TrayExecutable $trayExe `
+    -TrayLauncherScript $trayLauncher `
     -UserName $identity.Name `
     -StartupDisableMarker $marker
 

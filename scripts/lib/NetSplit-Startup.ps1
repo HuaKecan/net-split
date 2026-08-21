@@ -97,11 +97,41 @@ function Set-NetSplitServiceStartup {
         -ErrorMessage "Failed to configure net-split service recovery"
 }
 
+function Get-NetSplitPowerShellExecutable {
+    $systemDirectory = [Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::System)
+    return Join-Path `
+        $systemDirectory `
+        "WindowsPowerShell\v1.0\powershell.exe"
+}
+
+function Get-NetSplitTrayTaskArguments {
+    param(
+        [Parameter(Mandatory)]
+        [string]$TrayLauncherScript,
+        [Parameter(Mandatory)]
+        [string]$TrayExecutable
+    )
+
+    foreach ($path in @($TrayLauncherScript, $TrayExecutable)) {
+        if ($path.Contains('"')) {
+            throw "Tray startup paths must not contain quote characters."
+        }
+    }
+
+    return (
+        "-NoProfile -NonInteractive -WindowStyle Hidden " +
+        "-ExecutionPolicy Bypass -File `"$TrayLauncherScript`" " +
+        "-TrayExecutable `"$TrayExecutable`"")
+}
+
 function Register-NetSplitTrayTask {
     param(
         [string]$TaskName = $script:NetSplitDefaultTaskName,
         [Parameter(Mandatory)]
         [string]$TrayExecutable,
+        [Parameter(Mandatory)]
+        [string]$TrayLauncherScript,
         [Parameter(Mandatory)]
         [string]$UserName
     )
@@ -109,14 +139,25 @@ function Register-NetSplitTrayTask {
     if (-not (Test-Path -LiteralPath $TrayExecutable -PathType Leaf)) {
         throw "NetSplit tray executable was not found: $TrayExecutable"
     }
+    if (-not (Test-Path -LiteralPath $TrayLauncherScript -PathType Leaf)) {
+        throw "NetSplit tray launcher was not found: $TrayLauncherScript"
+    }
 
     if ([string]::IsNullOrWhiteSpace($UserName)) {
         throw "The interactive user name cannot be empty."
     }
 
+    $powerShellExecutable = Get-NetSplitPowerShellExecutable
+    if (-not (Test-Path -LiteralPath $powerShellExecutable -PathType Leaf)) {
+        throw "Windows PowerShell was not found: $powerShellExecutable"
+    }
+    $actionArguments = Get-NetSplitTrayTaskArguments `
+        -TrayLauncherScript ([IO.Path]::GetFullPath($TrayLauncherScript)) `
+        -TrayExecutable ([IO.Path]::GetFullPath($TrayExecutable))
     $action = New-ScheduledTaskAction `
-        -Execute $TrayExecutable `
-        -Argument "--background"
+        -Execute $powerShellExecutable `
+        -Argument $actionArguments `
+        -WorkingDirectory (Split-Path -Parent $TrayLauncherScript)
     $trigger = New-ScheduledTaskTrigger `
         -AtLogOn `
         -User $UserName
@@ -206,6 +247,8 @@ function Get-NetSplitStartupSnapshot {
         [string]$ServiceExecutable,
         [Parameter(Mandatory)]
         [string]$TrayExecutable,
+        [Parameter(Mandatory)]
+        [string]$TrayLauncherScript,
         [string]$UserName = "",
         [string]$StartupDisableMarker = ""
     )
@@ -296,12 +339,22 @@ function Get-NetSplitStartupSnapshot {
         -or $taskTriggerUser.Equals($UserName, [StringComparison]::OrdinalIgnoreCase) `
         -or $taskPrincipalUser.Equals($UserName, [StringComparison]::OrdinalIgnoreCase) `
         -or $taskPrincipalUser.Equals($expectedUserLeaf, [StringComparison]::OrdinalIgnoreCase)
+    $expectedPowerShell = Get-NetSplitPowerShellExecutable
+    $expectedTaskArguments = Get-NetSplitTrayTaskArguments `
+        -TrayLauncherScript ([IO.Path]::GetFullPath($TrayLauncherScript)) `
+        -TrayExecutable ([IO.Path]::GetFullPath($TrayExecutable))
+    $trayLauncherExists = Test-Path `
+        -LiteralPath $TrayLauncherScript `
+        -PathType Leaf
     $taskRegistrationHealthy = $null -ne $task `
+        -and $trayLauncherExists `
         -and $taskEnabledText.Equals("true", [StringComparison]::OrdinalIgnoreCase) `
         -and $taskAction.Equals(
-            [IO.Path]::GetFullPath($TrayExecutable),
+            [IO.Path]::GetFullPath($expectedPowerShell),
             [StringComparison]::OrdinalIgnoreCase) `
-        -and $taskArguments.Trim().Equals("--background", [StringComparison]::OrdinalIgnoreCase) `
+        -and $taskArguments.Trim().Equals(
+            $expectedTaskArguments,
+            [StringComparison]::OrdinalIgnoreCase) `
         -and $taskDelay.Equals("PT15S", [StringComparison]::OrdinalIgnoreCase) `
         -and $taskStartWhenAvailable.Equals("true", [StringComparison]::OrdinalIgnoreCase) `
         -and $taskRestartCount -eq "5" `
@@ -347,6 +400,25 @@ function Get-NetSplitStartupSnapshot {
         $lastTaskResult = ConvertTo-NetSplitHexResult $taskInfo.LastTaskResult
     }
 
+    $startupLogPath = Join-Path `
+        ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
+        "net-split\logs\startup.log"
+    $startupLogExists = Test-Path -LiteralPath $startupLogPath -PathType Leaf
+    $startupLogLastWriteTime = $null
+    if ($startupLogExists) {
+        $startupLogItem = Get-Item -LiteralPath $startupLogPath
+        $startupLogLastWriteTime = $startupLogItem.LastWriteTimeUtc.ToString("o")
+    }
+    $trayLogPath = Join-Path `
+        ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) `
+        "net-split\logs\tray.log"
+    $trayLogExists = Test-Path -LiteralPath $trayLogPath -PathType Leaf
+    $trayLogLastWriteTime = $null
+    if ($trayLogExists) {
+        $trayLogItem = Get-Item -LiteralPath $trayLogPath
+        $trayLogLastWriteTime = $trayLogItem.LastWriteTimeUtc.ToString("o")
+    }
+
     return [pscustomobject]@{
         CapturedAt = [DateTimeOffset]::UtcNow.ToString("o")
         RegistrationHealthy = $serviceRegistrationHealthy -and $taskRegistrationHealthy
@@ -371,12 +443,18 @@ function Get-NetSplitStartupSnapshot {
             PrincipalUser = $taskPrincipalUser
             Action = $taskAction
             Arguments = $taskArguments
+            LauncherScript = [IO.Path]::GetFullPath($TrayLauncherScript)
+            LauncherExists = $trayLauncherExists
             LogonDelay = $taskDelay
             StartWhenAvailable = $taskStartWhenAvailable
             RestartCount = $taskRestartCount
             RestartInterval = $taskRestartInterval
             LastRunTime = $lastRunTime
             LastTaskResult = $lastTaskResult
+            DiagnosticLogExists = $startupLogExists
+            DiagnosticLogLastWriteTime = $startupLogLastWriteTime
+            TrayLogExists = $trayLogExists
+            TrayLogLastWriteTime = $trayLogLastWriteTime
         }
         TrayProcess = [pscustomobject]@{
             Count = $trayProcesses.Count

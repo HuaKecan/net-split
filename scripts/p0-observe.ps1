@@ -231,6 +231,7 @@ try {
         "net-split"
     $serviceExe = Join-Path $installRoot "service\NetSplit.Service.exe"
     $trayExe = Join-Path $installRoot "tray\NetSplit.Tray.exe"
+    $trayLauncher = Join-Path $installRoot "start-tray.ps1"
     $managedMihomoPath = Join-Path $installRoot "service\mihomo.exe"
     $mihomoHashPath = "$managedMihomoPath.sha256"
     $startupMarker = Join-Path `
@@ -241,6 +242,7 @@ try {
         -TaskName $script:NetSplitDefaultTaskName `
         -ServiceExecutable $serviceExe `
         -TrayExecutable $trayExe `
+        -TrayLauncherScript $trayLauncher `
         -UserName $identity.Name `
         -StartupDisableMarker $startupMarker
 

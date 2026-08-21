@@ -27,7 +27,11 @@ public sealed class StartupRegistrationProbeTests
                   "StartWhenAvailable": "true",
                   "RestartCount": "5",
                   "RestartInterval": "PT1M",
-                  "LastTaskResult": "0x00041301"
+                  "LastTaskResult": "0x00041301",
+                  "LauncherExists": true,
+                  "DiagnosticLogExists": true,
+                  "DiagnosticLogLastWriteTime": "2026-08-21T14:15:53Z",
+                  "TrayLogExists": false
                 },
                 "TrayProcess": {
                   "Count": 1,
@@ -51,6 +55,9 @@ public sealed class StartupRegistrationProbeTests
         Assert.True(result.RegistrationHealthy);
         Assert.Equal("Running", result.Service.State);
         Assert.Equal("PT15S", result.TrayTask.LogonDelay);
+        Assert.True(result.TrayTask.LauncherExists);
+        Assert.True(result.TrayTask.DiagnosticLogExists);
+        Assert.False(result.TrayTask.TrayLogExists);
         Assert.True(result.TrayProcess.Running);
         Assert.Equal("Healthy", result.Runtime.Mode);
         Assert.True(result.Runtime.TunEnabled);
@@ -88,5 +95,37 @@ public sealed class StartupRegistrationProbeTests
         Assert.Single(result.Issues);
         Assert.Equal("registration check failed", result.Error);
         Assert.False(result.Runtime.Reachable);
+    }
+
+    [Fact]
+    public void TrayExceptionDescriptionOmitsSensitiveExceptionMessages()
+    {
+        const string secret = "subscription-token-and-password";
+        var exception = new InvalidOperationException(
+            secret,
+            new IOException(secret));
+
+        var description = TrayDiagnostics.DescribeException(exception);
+
+        Assert.DoesNotContain(secret, description, StringComparison.Ordinal);
+        Assert.Contains(
+            typeof(InvalidOperationException).FullName!,
+            description,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            typeof(IOException).FullName!,
+            description,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrayDiagnosticsExposesAnExplicitUserExitMarkerOperation()
+    {
+        var method = typeof(TrayDiagnostics).GetMethod(
+            nameof(TrayDiagnostics.MarkUserExit));
+
+        Assert.NotNull(method);
+        Assert.True(method!.IsStatic);
+        Assert.Equal(typeof(void), method.ReturnType);
     }
 }

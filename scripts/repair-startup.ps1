@@ -39,8 +39,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $serviceExe = Join-Path $InstallRoot "service\NetSplit.Service.exe"
 $trayExe = Join-Path $InstallRoot "tray\NetSplit.Tray.exe"
+$trayLauncher = Join-Path $InstallRoot "start-tray.ps1"
 $marker = Join-Path $env:ProgramData "net-split\runtime\startup.force-disabled"
-foreach ($path in @($InstallRoot, $serviceExe, $trayExe)) {
+foreach ($path in @($InstallRoot, $serviceExe, $trayExe, $trayLauncher)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Required net-split path was not found: $path"
     }
@@ -57,6 +58,7 @@ Set-NetSplitServiceStartup `
 Register-NetSplitTrayTask `
     -TaskName $script:NetSplitDefaultTaskName `
     -TrayExecutable $trayExe `
+    -TrayLauncherScript $trayLauncher `
     -UserName $identity.Name
 
 if ($StartService) {
@@ -80,6 +82,7 @@ $snapshot = Get-NetSplitStartupSnapshot `
     -TaskName $script:NetSplitDefaultTaskName `
     -ServiceExecutable $serviceExe `
     -TrayExecutable $trayExe `
+    -TrayLauncherScript $trayLauncher `
     -UserName $identity.Name `
     -StartupDisableMarker $marker
 $snapshot | ConvertTo-Json -Depth 12

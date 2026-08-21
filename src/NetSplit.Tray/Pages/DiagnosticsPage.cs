@@ -826,10 +826,22 @@ public sealed class DiagnosticsPage : PageBase
                 ? "服务运行中"
                 : $"服务{startup.Service.State}";
             var taskText = startup.TrayTask.Enabled
-                ? startup.TrayProcess.Running ? "托盘运行中" : "登录任务已启用"
+                ? startup.TrayProcess.Running ? "托盘运行中" : "托盘未运行"
                 : "登录任务已禁用";
-            _startupValue.Text = $"{serviceText} · {taskText}";
-            _startupValue.ForeColor = theme.Success;
+            var monitorText = startup.TrayTask.LauncherExists
+                ? startup.TrayTask.DiagnosticLogExists
+                    ? "启动监护有记录"
+                    : "启动监护待首次验证"
+                : "启动监护缺失";
+            _startupValue.Text = $"{serviceText} · {taskText} · {monitorText}";
+            _startupValue.ForeColor = startup.Service.State.Equals(
+                    "Running",
+                    StringComparison.OrdinalIgnoreCase)
+                && startup.TrayTask.Enabled
+                && startup.TrayProcess.Running
+                && startup.TrayTask.LauncherExists
+                    ? theme.Success
+                    : theme.Warning;
         }
 
         _lastErrorValue.Text = string.IsNullOrWhiteSpace(runtime.LastError)

@@ -232,6 +232,11 @@ internal sealed record StartupTaskStatus
     public string RestartCount { get; init; } = string.Empty;
     public string RestartInterval { get; init; } = string.Empty;
     public string LastTaskResult { get; init; } = string.Empty;
+    public bool LauncherExists { get; init; }
+    public bool DiagnosticLogExists { get; init; }
+    public DateTimeOffset? DiagnosticLogLastWriteTime { get; init; }
+    public bool TrayLogExists { get; init; }
+    public DateTimeOffset? TrayLogLastWriteTime { get; init; }
 }
 
 internal sealed record StartupProcessStatus
