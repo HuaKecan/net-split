@@ -19,6 +19,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     private readonly ISubscriptionLoader _subscriptionLoader;
     private readonly IMihomoProcessManager _processManager;
     private readonly IMihomoControllerClient _controller;
+    private readonly ILoopbackPortManager _loopbackPorts;
     private readonly FileLogBuffer _logs;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly SemaphoreSlim _proxyDelayGate = new(1, 1);
@@ -48,7 +49,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     private ProxyDelayCacheEntry? _proxyDelayCache;
     private int _proxyDelayCacheGeneration;
 
-    public NetSplitCoordinator(
+    internal NetSplitCoordinator(
         AppPaths paths,
         SettingsStore settingsStore,
         ISecretProtector secretProtector,
@@ -58,6 +59,31 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         IMihomoProcessManager processManager,
         IMihomoControllerClient controller,
         FileLogBuffer logs)
+        : this(
+            paths,
+            settingsStore,
+            secretProtector,
+            adapterProvider,
+            validator,
+            subscriptionLoader,
+            processManager,
+            controller,
+            logs,
+            new LoopbackPortManager())
+    {
+    }
+
+    public NetSplitCoordinator(
+        AppPaths paths,
+        SettingsStore settingsStore,
+        ISecretProtector secretProtector,
+        INetworkAdapterProvider adapterProvider,
+        IConfigurationValidatorFacade validator,
+        ISubscriptionLoader subscriptionLoader,
+        IMihomoProcessManager processManager,
+        IMihomoControllerClient controller,
+        FileLogBuffer logs,
+        ILoopbackPortManager loopbackPorts)
     {
         _paths = paths;
         _settingsStore = settingsStore;
@@ -67,6 +93,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
         _subscriptionLoader = subscriptionLoader;
         _processManager = processManager;
         _controller = controller;
+        _loopbackPorts = loopbackPorts;
         _logs = logs;
         _processManager.Exited += OnMihomoExited;
     }
@@ -671,7 +698,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
     {
         EnsureReady();
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var wasEnabled = _settings.Enabled;
+        var previousSettings = _settings;
         try
         {
             EnsureCoreStartAllowed();
@@ -679,11 +706,11 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
             await ApplyCoreAsync(
                 true,
                 cancellationToken,
-                restartLastKnownGoodOnFailure: wasEnabled).ConfigureAwait(false);
+                restartLastKnownGoodOnFailure: previousSettings.Enabled).ConfigureAwait(false);
         }
         catch
         {
-            _settings = _settings with { Enabled = wasEnabled };
+            _settings = previousSettings;
             await _settingsStore.SaveAsync(_settings, cancellationToken).ConfigureAwait(false);
             throw;
         }
@@ -1389,6 +1416,42 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
             _settings.Subscriptions,
             forceRefresh,
             cancellationToken).ConfigureAwait(false);
+
+        var settingsBeforePortSelection = _settings;
+        var requiresPortReservation = !_processManager.IsRunning;
+        using var portReservation = requiresPortReservation
+            ? _loopbackPorts.ReserveAvailablePorts(
+                _settings.ControllerPort,
+                _settings.MixedPort)
+            : null;
+        if (requiresPortReservation)
+        {
+            var previousControllerPort = _settings.ControllerPort;
+            var previousMixedPort = _settings.MixedPort;
+            var selection = portReservation!.Ports;
+            var controllerPortChanged =
+                selection.ControllerPortChanged(previousControllerPort);
+            var mixedPortChanged = selection.MixedPortChanged(previousMixedPort);
+            if (controllerPortChanged || mixedPortChanged)
+            {
+                _settings = _settings with
+                {
+                    ControllerPort = selection.ControllerPort,
+                    MixedPort = selection.MixedPort
+                };
+
+                var message = controllerPortChanged && mixedPortChanged
+                    ? "Mihomo 控制端口和混合端口已被占用，已自动改用可用的本机端口。"
+                    : controllerPortChanged
+                        ? "Mihomo 控制端口已被占用，已自动改用可用的本机端口。"
+                        : "Mihomo 混合端口已被占用，已自动改用可用的本机端口。";
+                await _logs.WriteAsync(
+                    "WARN",
+                    message,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         var config = MihomoConfigGenerator.Generate(
             subscriptions,
             _settings,
@@ -1442,7 +1505,7 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
             {
                 await SaveLastKnownGoodAsync(
                     _paths.RuntimeConfigFile,
-                    _activeSettings ?? _settings,
+                    _activeSettings ?? settingsBeforePortSelection,
                     cancellationToken).ConfigureAwait(false);
             }
         }
@@ -1458,7 +1521,10 @@ public sealed class NetSplitCoordinator : IAsyncDisposable
             await UpdateTransactionPhaseAsync(
                 TransactionPhase.RuntimeSwapped,
                 cancellationToken).ConfigureAwait(false);
-            await _processManager.StartAsync(_settings, cancellationToken).ConfigureAwait(false);
+            await _processManager.StartAsync(
+                _settings,
+                cancellationToken,
+                portReservation).ConfigureAwait(false);
             await UpdateTransactionPhaseAsync(
                 TransactionPhase.CoreStarted,
                 cancellationToken).ConfigureAwait(false);

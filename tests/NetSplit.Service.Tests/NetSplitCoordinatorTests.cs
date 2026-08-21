@@ -106,6 +106,284 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         Assert.Contains("interface-name: F50", yaml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task EnableReassignsOccupiedControllerPortAcrossConfigAndClients()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        var process = new FakeProcessManager();
+        var controller = new FakeController
+        {
+            SelectedProxyHealthy = true
+        };
+        var ports = new FakeLoopbackPortManager
+        {
+            Selection = new LoopbackPortSelection(24001, 17897)
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            controller,
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var stored = await settingsStore.LoadAsync().ConfigureAwait(true);
+        Assert.Equal(24001, stored.ControllerPort);
+        Assert.Equal(24001, process.LastStartedSettings?.ControllerPort);
+        Assert.Equal(24001, controller.LastSnapshotSettings?.ControllerPort);
+        Assert.Contains(
+            "external-controller: 127.0.0.1:24001",
+            await File.ReadAllTextAsync(paths.RuntimeConfigFile).ConfigureAwait(true),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            logs.Snapshot(),
+            entry => entry.Contains(
+                "控制端口已被占用",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EnableReassignsOccupiedMixedPortAndPersistsIt()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        var process = new FakeProcessManager();
+        var ports = new FakeLoopbackPortManager
+        {
+            Selection = new LoopbackPortSelection(19097, 24002)
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            new FakeController { SelectedProxyHealthy = true },
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var stored = await settingsStore.LoadAsync().ConfigureAwait(true);
+        Assert.Equal(24002, stored.MixedPort);
+        Assert.Equal(24002, process.LastStartedSettings?.MixedPort);
+        Assert.Contains(
+            "mixed-port: 24002",
+            await File.ReadAllTextAsync(paths.RuntimeConfigFile).ConfigureAwait(true),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManagedRestartRetainsPreviouslySelectedPorts()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        var process = new FakeProcessManager();
+        var ports = new FakeLoopbackPortManager
+        {
+            Selection = new LoopbackPortSelection(24003, 24004)
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            new FakeController { SelectedProxyHealthy = true },
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+        await coordinator.EnableAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await coordinator.AddRuleAsync(
+            new CustomRule
+            {
+                MatchType = RuleMatchType.Domain,
+                Action = RuleAction.Direct,
+                Value = "restart.example"
+            },
+            CancellationToken.None).ConfigureAwait(true);
+
+        Assert.Equal(1, ports.SelectionCalls);
+        Assert.Equal(2, process.StartAttempts);
+        Assert.All(
+            process.StartedSettings,
+            settings =>
+            {
+                Assert.Equal(24003, settings.ControllerPort);
+                Assert.Equal(24004, settings.MixedPort);
+            });
+    }
+
+    [Fact]
+    public async Task PortAllocationFailureDoesNotStartCore()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        var process = new FakeProcessManager();
+        var ports = new FakeLoopbackPortManager
+        {
+            SelectionError = new InvalidOperationException("no loopback ports")
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            new FakeController(),
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.EnableAsync(CancellationToken.None)).ConfigureAwait(true);
+
+        Assert.Contains("no loopback ports", exception.Message, StringComparison.Ordinal);
+        Assert.False(process.IsRunning);
+        Assert.Equal(0, process.StartAttempts);
+        Assert.False((await settingsStore.LoadAsync().ConfigureAwait(true)).Enabled);
+        Assert.False(File.Exists(paths.RuntimeConfigFile));
+    }
+
+    [Fact]
+    public async Task FailedValidationRestoresPortsSelectedDuringEnable()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        var process = new FakeProcessManager
+        {
+            FailValidationsRemaining = 1
+        };
+        var ports = new FakeLoopbackPortManager
+        {
+            Selection = new LoopbackPortSelection(24005, 24006)
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            new FakeController(),
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.EnableAsync(CancellationToken.None)).ConfigureAwait(true);
+
+        var stored = await settingsStore.LoadAsync().ConfigureAwait(true);
+        Assert.Equal(19097, stored.ControllerPort);
+        Assert.Equal(17897, stored.MixedPort);
+        Assert.False(stored.Enabled);
+        Assert.Equal(0, process.StartAttempts);
+    }
+
+    [Fact]
+    public async Task ExistingRuntimeSnapshotKeepsPreMigrationPorts()
+    {
+        var direct = Adapter("direct", "main", "192.168.6.2", "192.168.6.1");
+        var proxy = Adapter("proxy", "F50", "192.168.0.2", "192.168.0.1");
+        var paths = new AppPaths(_tempRoot);
+        paths.EnsureDirectories();
+        const string previousRuntime = "previous runtime config";
+        await File.WriteAllTextAsync(
+            paths.RuntimeConfigFile,
+            previousRuntime).ConfigureAwait(true);
+        var process = new FakeProcessManager
+        {
+            FailStartsRemaining = 1
+        };
+        var ports = new FakeLoopbackPortManager
+        {
+            Selection = new LoopbackPortSelection(24007, 24008)
+        };
+        using var settingsStore = new SettingsStore(paths);
+        using var logs = new FileLogBuffer(paths);
+        await settingsStore.SaveAsync(Settings(direct, proxy)).ConfigureAwait(true);
+
+        await using var coordinator = new NetSplitCoordinator(
+            paths,
+            settingsStore,
+            new FakeSecretProtector(),
+            new FakeAdapterProvider([direct, proxy]),
+            new ConfigurationValidatorFacade(),
+            new FakeSubscriptionLoader(),
+            process,
+            new FakeController(),
+            logs,
+            ports);
+        await coordinator.InitializeAsync(CancellationToken.None).ConfigureAwait(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.EnableAsync(CancellationToken.None)).ConfigureAwait(true);
+
+        using var manifest = JsonDocument.Parse(
+            await File.ReadAllTextAsync(
+                paths.LastKnownGoodManifestFile).ConfigureAwait(true));
+        var settingsFileName = manifest.RootElement
+            .GetProperty("settingsFileName")
+            .GetString();
+        Assert.False(string.IsNullOrWhiteSpace(settingsFileName));
+        using var snapshotSettings = JsonDocument.Parse(
+            await File.ReadAllTextAsync(
+                Path.Combine(
+                    paths.LastKnownGoodDirectory,
+                    settingsFileName!)).ConfigureAwait(true));
+        Assert.Equal(
+            19097,
+            snapshotSettings.RootElement.GetProperty("controllerPort").GetInt32());
+        Assert.Equal(
+            17897,
+            snapshotSettings.RootElement.GetProperty("mixedPort").GetInt32());
+        Assert.Equal(
+            previousRuntime,
+            await File.ReadAllTextAsync(paths.RuntimeConfigFile).ConfigureAwait(true));
+    }
+
     [Theory]
     [InlineData(false, true, "Mihomo TUN")]
     [InlineData(true, false, "Mihomo DNS")]
@@ -2634,20 +2912,36 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         public bool IsRunning { get; private set; }
         public int FailStartsRemaining { get; set; }
         public int FailStopsRemaining { get; set; }
+        public int FailValidationsRemaining { get; set; }
         public int StartAttempts { get; private set; }
         public int StopAttempts { get; private set; }
+        public SplitRouteSettings? LastStartedSettings { get; private set; }
+        public List<SplitRouteSettings> StartedSettings { get; } = [];
 
         public Task<ProcessValidationResult> ValidateAsync(
             SplitRouteSettings settings,
             string configPath,
             CancellationToken cancellationToken)
         {
+            if (FailValidationsRemaining > 0)
+            {
+                FailValidationsRemaining--;
+                return Task.FromResult(
+                    new ProcessValidationResult(false, "simulated validation failure"));
+            }
+
             return Task.FromResult(new ProcessValidationResult(true, "ok"));
         }
 
-        public Task StartAsync(SplitRouteSettings settings, CancellationToken cancellationToken)
+        public Task StartAsync(
+            SplitRouteSettings settings,
+            CancellationToken cancellationToken,
+            ILoopbackPortReservation? portReservation = null)
         {
             StartAttempts++;
+            LastStartedSettings = settings;
+            StartedSettings.Add(settings);
+            portReservation?.Release();
             if (FailStartsRemaining > 0)
             {
                 FailStartsRemaining--;
@@ -2697,6 +2991,7 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
         public Dictionary<string, int?> DelayByProxyName { get; } =
             new(StringComparer.Ordinal);
         public int SnapshotCalls { get; private set; }
+        public SplitRouteSettings? LastSnapshotSettings { get; private set; }
 
         public Task<bool> WaitUntilReadyAsync(
             SplitRouteSettings settings,
@@ -2718,6 +3013,7 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
             CancellationToken cancellationToken)
         {
             SnapshotCalls++;
+            LastSnapshotSettings = settings;
             if (FailNextSnapshot)
             {
                 FailNextSnapshot = false;
@@ -2807,6 +3103,53 @@ public sealed class NetSplitCoordinatorTests : IAsyncLifetime
             CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeLoopbackPortManager : ILoopbackPortManager
+    {
+        public LoopbackPortSelection? Selection { get; init; }
+        public Exception? SelectionError { get; init; }
+        public int SelectionCalls { get; private set; }
+
+        public ILoopbackPortReservation ReserveAvailablePorts(
+            int controllerPort,
+            int mixedPort)
+        {
+            SelectionCalls++;
+            if (SelectionError is not null)
+            {
+                throw SelectionError;
+            }
+
+            return new FakeLoopbackPortReservation(
+                Selection ?? new LoopbackPortSelection(controllerPort, mixedPort));
+        }
+
+        public ILoopbackPortReservation ReservePorts(
+            int controllerPort,
+            int mixedPort)
+        {
+            return new FakeLoopbackPortReservation(
+                new LoopbackPortSelection(controllerPort, mixedPort));
+        }
+    }
+
+    private sealed class FakeLoopbackPortReservation : ILoopbackPortReservation
+    {
+        public FakeLoopbackPortReservation(LoopbackPortSelection ports)
+        {
+            Ports = ports;
+        }
+
+        public LoopbackPortSelection Ports { get; }
+
+        public void Release()
+        {
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

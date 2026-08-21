@@ -12,6 +12,7 @@ builder.Services.AddSingleton<FileLogBuffer>();
 builder.Services.AddSingleton(new HttpClient());
 builder.Services.AddSingleton<ISubscriptionLoader, SubscriptionLoader>();
 builder.Services.AddSingleton<IMihomoControllerClient, MihomoControllerClient>();
+builder.Services.AddSingleton<ILoopbackPortManager, LoopbackPortManager>();
 builder.Services.AddSingleton<IMihomoProcessManager, MihomoProcessManager>();
 builder.Services.AddSingleton<NetSplitCoordinator>();
 builder.Services.AddHostedService<CoordinatorHostedService>();

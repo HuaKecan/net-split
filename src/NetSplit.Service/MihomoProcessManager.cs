@@ -15,7 +15,10 @@ public interface IMihomoProcessManager : IAsyncDisposable
         string configPath,
         CancellationToken cancellationToken);
 
-    Task StartAsync(SplitRouteSettings settings, CancellationToken cancellationToken);
+    Task StartAsync(
+        SplitRouteSettings settings,
+        CancellationToken cancellationToken,
+        ILoopbackPortReservation? portReservation = null);
     Task StopAsync(SplitRouteSettings settings, CancellationToken cancellationToken);
 }
 
@@ -24,20 +27,31 @@ public sealed class MihomoProcessManager : IMihomoProcessManager
     private readonly AppPaths _paths;
     private readonly FileLogBuffer _logs;
     private readonly IMihomoControllerClient _controller;
+    private readonly ILoopbackPortManager _loopbackPorts;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentQueue<string> _recentOutput = new();
 
     private Process? _process;
     private WindowsJob? _job;
 
-    public MihomoProcessManager(
+    internal MihomoProcessManager(
         AppPaths paths,
         FileLogBuffer logs,
         IMihomoControllerClient controller)
+        : this(paths, logs, controller, new LoopbackPortManager())
+    {
+    }
+
+    public MihomoProcessManager(
+        AppPaths paths,
+        FileLogBuffer logs,
+        IMihomoControllerClient controller,
+        ILoopbackPortManager loopbackPorts)
     {
         _paths = paths;
         _logs = logs;
         _controller = controller;
+        _loopbackPorts = loopbackPorts;
     }
 
     public event EventHandler? Exited;
@@ -87,13 +101,28 @@ public sealed class MihomoProcessManager : IMihomoProcessManager
 
     public async Task StartAsync(
         SplitRouteSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILoopbackPortReservation? portReservation = null)
     {
+        if (portReservation is not null
+            && portReservation.Ports != new LoopbackPortSelection(
+                settings.ControllerPort,
+                settings.MixedPort))
+        {
+            throw new ArgumentException(
+                "Reserved ports do not match the Mihomo settings.",
+                nameof(portReservation));
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ILoopbackPortReservation? startReservation = portReservation;
         try
         {
             await StopCoreAsync(settings, cancellationToken).ConfigureAwait(false);
             EnsureCoreStartAllowed();
+            startReservation ??= _loopbackPorts.ReservePorts(
+                settings.ControllerPort,
+                settings.MixedPort);
             TrustedRuntimePolicy.EnsureTrustedExecutable(settings.MihomoPath);
             PrepareGeoData(settings.GeoDataDirectory);
             _recentOutput.Clear();
@@ -116,6 +145,7 @@ public sealed class MihomoProcessManager : IMihomoProcessManager
             try
             {
                 EnsureCoreStartAllowed();
+                startReservation.Release();
                 if (!process.Start())
                 {
                     throw new InvalidOperationException("无法启动 Mihomo。");
@@ -158,6 +188,7 @@ public sealed class MihomoProcessManager : IMihomoProcessManager
         }
         finally
         {
+            startReservation?.Dispose();
             _gate.Release();
         }
     }

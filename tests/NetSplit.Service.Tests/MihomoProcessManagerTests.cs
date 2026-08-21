@@ -8,6 +8,47 @@ namespace NetSplit.Service.Tests;
 public sealed class MihomoProcessManagerTests
 {
     [Fact]
+    public async Task StartAsyncRejectsPortCollisionBeforeStartingProcess()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "net-split-process-tests",
+            Guid.NewGuid().ToString("N"));
+        var paths = new AppPaths(root);
+        paths.EnsureDirectories();
+        using var logs = new FileLogBuffer(paths);
+        var ports = new RejectingLoopbackPortManager();
+        await using var manager = new MihomoProcessManager(
+            paths,
+            logs,
+            new NoOpController(),
+            ports);
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                manager.StartAsync(
+                    new SplitRouteSettings
+                    {
+                        MihomoPath = Path.Combine(root, "missing-mihomo.exe")
+                    },
+                    CancellationToken.None)).ConfigureAwait(true);
+
+            Assert.Contains("port collision", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(1, ports.EnsureCalls);
+            Assert.False(manager.IsRunning);
+            Assert.False(File.Exists(paths.MihomoPidFile));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task StartAsyncRejectsStartupDisableMarkerBeforeStartingProcess()
     {
         var root = Path.Combine(
@@ -308,6 +349,26 @@ public sealed class MihomoProcessManagerTests
             CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RejectingLoopbackPortManager : ILoopbackPortManager
+    {
+        public int EnsureCalls { get; private set; }
+
+        public ILoopbackPortReservation ReserveAvailablePorts(
+            int controllerPort,
+            int mixedPort)
+        {
+            throw new InvalidOperationException("simulated port collision");
+        }
+
+        public ILoopbackPortReservation ReservePorts(
+            int controllerPort,
+            int mixedPort)
+        {
+            EnsureCalls++;
+            throw new InvalidOperationException("simulated port collision");
         }
     }
 }
